@@ -1,0 +1,20 @@
+{
+  "name": "Brand Template Enforcer",
+  "description": "Ensure every generated PowerPoint deck or Word document starts from the correct bundled or SharePoint-hosted brand template.",
+  "platforms": [
+    "Copilot Studio"
+  ],
+  "tags": [
+    "branding",
+    "powerpoint",
+    "word",
+    "templates",
+    "documents",
+    "presentations"
+  ],
+  "author": "Doug Bellingeri",
+  "authorUrl": "https://github.com/CATDAB",
+  "version": "1.2.0",
+  "createdAt": "2026-07-16",
+  "updatedAt": "2026-07-18"
+}

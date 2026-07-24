@@ -2,36 +2,102 @@
 import Layout from "../../layouts/Layout.astro";
 import SkillCover from "../../components/SkillCover.astro";
 import { getCollection, render } from "astro:content";
-import { formatDate, PLATFORM_COLORS } from "../../lib/skills";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import {
+  validateAutomationData,
+  type AutomationDigest,
+} from "../../../scripts/validate-automation";
+import { formatDate, PLATFORM_COLORS, initials, coverGradient } from "../../lib/skills";
 import { withBase } from "../../lib/url";
+import { authorKey, normalizeLogin } from "../../lib/badges";
+import { getRating } from "../../lib/ratings";
+import { ANALYTICS_ENABLED } from "../../lib/analytics-config";
+import {
+  RATINGS_ENABLED,
+  GISCUS_REPO,
+  GISCUS_REPO_ID,
+  GISCUS_CATEGORY,
+  GISCUS_CATEGORY_ID,
+} from "../../lib/ratings-config";
 
 export async function getStaticPaths() {
   const skills = await getCollection("skills");
+  // Count each author's submissions once so the byline can offer a "see all
+  // their skills" link (and hide it for one-off authors) without re-scanning
+  // the whole collection on every page.
+  const countByKey = new Map<string, number>();
+  for (const s of skills) {
+    const k = authorKey(s.data.authorGithub, s.data.author);
+    countByKey.set(k, (countByKey.get(k) ?? 0) + 1);
+  }
   return skills.map((skill) => ({
     params: { slug: skill.id },
-    props: { skill },
+    props: {
+      skill,
+      authorSkillCount:
+        countByKey.get(authorKey(skill.data.authorGithub, skill.data.author)) ??
+        1,
+    },
   }));
 }
 
-const { skill } = Astro.props;
+const { skill, authorSkillCount } = Astro.props;
 const d = skill.data;
+const isPlugin = d.type === "plugin";
+const isAutomation = d.type === "automation";
+// An automation whose bundle is a `.zip` is an installer (an INSTALL.md + JSON
+// config files) rather than a directly-importable `.json`.
+const isInstaller = isAutomation && Boolean(d.bundle?.endsWith(".zip"));
+const noun = isPlugin ? "plugin" : isAutomation ? "automation" : "skill";
 const { Content } = await render(skill);
+
+// Optional human-facing overview (generated from a submission's
+// README.md, keyed by the same slug). When present it replaces the default
+// body as the detail page's main content.
+const guides = await getCollection("guides");
+const guide = guides.find((g) => g.id === skill.id);
+const GuideContent = guide ? (await render(guide)).Content : null;
+
+// For importable `.json` automations, parse the published file at build time so
+// we can render its trigger + prompt steps as structured UI instead of raw
+// markdown. Installer `.zip` automations have no schedule/steps — their
+// INSTALL.md is rendered as the body via <Content /> below.
+let automation: AutomationDigest | null = null;
+if (isAutomation && d.bundle && d.bundle.endsWith(".json")) {
+  try {
+    const raw = readFileSync(join(process.cwd(), "public", d.bundle), "utf8");
+    const res = validateAutomationData(JSON.parse(raw), skill.id);
+    if (res.ok && res.digest) automation = res.digest;
+  } catch {
+    automation = null;
+  }
+}
 
 const updated = formatDate(d.updatedAt ?? d.createdAt);
 const created = formatDate(d.createdAt);
+const rating = getRating(skill.id);
+const isSample = d.tags.includes("sample");
 
 const meta: Array<[string, string, string?]> = [];
-if (d.author) meta.push(["Author", d.author, d.authorUrl]);
 if (d.version) meta.push(["Version", d.version]);
 if (created) meta.push(["Added", created]);
 if (updated && updated !== created) meta.push(["Updated", updated]);
+
+// Author byline: avatar + name + a link to the rest of their gallery. Prefer the
+// GitHub avatar/profile when we know the login; fall back to a brand monogram
+// and whatever profile URL the submission provided.
+const authorLogin = normalizeLogin(d.authorGithub);
+const authorSlug = authorKey(d.authorGithub, d.author);
+const authorProfileUrl =
+  d.authorUrl ?? (authorLogin ? `https://github.com/${authorLogin}` : undefined);
 ---
 
 <Layout title={d.name} description={d.description}>
   <div class="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-8">
     <a
       href={withBase("/")}
-      class="inline-flex items-center gap-1.5 text-sm text-slate-400 hover:text-white transition-colors"
+      class="inline-flex items-center gap-1.5 text-sm text-muted hover:text-fg transition-colors"
     >
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -47,7 +113,7 @@ if (updated && updated !== created) meta.push(["Updated", updated]);
       Back to gallery
     </a>
 
-    <div class="mt-5 overflow-hidden rounded-2xl border border-white/5">
+    <div class="mt-5 overflow-hidden rounded-2xl border border-border">
       <SkillCover
         slug={skill.id}
         name={d.name}
@@ -55,14 +121,120 @@ if (updated && updated !== created) meta.push(["Updated", updated]);
         tags={d.tags}
         coverColor={d.coverColor}
         hasBundle={Boolean(d.bundle)}
+        type={d.type}
+        isInstaller={isInstaller}
         variant="hero"
       />
     </div>
 
+    {
+      isSample && (
+        <div class="mt-5 flex items-start gap-3 rounded-xl border border-amber-400/40 bg-amber-400/10 p-4">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            class="mt-0.5 h-5 w-5 shrink-0 text-amber-500"
+          >
+            <path d="M12 2 3 7v10l9 5 9-5V7l-9-5zm0 2.3L18 8v.02l-6 3.33-6-3.33V8l6-3.7zM5 9.7l6 3.33v6.64l-6-3.33V9.7zm14 0v6.64l-6 3.33v-6.64l6-3.33z" />
+          </svg>
+          <p class="text-sm text-fg/80">
+            <span class="font-semibold text-fg">Sample {noun}.</span> This
+            is placeholder / demo content included to show how the gallery works —
+            not a real, production-ready submission.
+          </p>
+        </div>
+      )
+    }
+
     <div class="mt-8 grid gap-8 lg:grid-cols-[1fr_18rem]">
       <!-- Main content -->
-      <div>
-        <p class="text-lg text-slate-300">{d.description}</p>
+      <div class="order-last min-w-0 lg:order-none">
+        <p class="text-lg text-muted">{d.description}</p>
+
+        {
+          d.author && (
+            <div class="mt-5 flex items-center gap-3">
+              <a
+                href={authorProfileUrl ?? withBase(`/?author=${encodeURIComponent(authorSlug)}`)}
+                target={authorProfileUrl ? "_blank" : undefined}
+                rel={authorProfileUrl ? "noopener" : undefined}
+                class="shrink-0"
+                aria-label={
+                  authorProfileUrl
+                    ? `${d.author} on GitHub`
+                    : `Browse ${d.author}'s skills`
+                }
+              >
+                <span
+                  class="relative grid h-10 w-10 place-items-center overflow-hidden rounded-full text-[11px] font-bold text-white ring-1 ring-border"
+                  style={`background-image:${coverGradient(d.author)}`}
+                >
+                  {initials(d.author)}
+                  {authorLogin && (
+                    <img
+                      src={`https://github.com/${authorLogin}.png?size=80`}
+                      alt=""
+                      loading="lazy"
+                      onerror="this.remove()"
+                      class="absolute inset-0 h-full w-full object-cover"
+                    />
+                  )}
+                </span>
+              </a>
+              <div class="min-w-0 leading-snug">
+                <div class="truncate text-sm">
+                  <span class="text-muted">by </span>
+                  {authorProfileUrl ? (
+                    <a
+                      href={authorProfileUrl}
+                      target="_blank"
+                      rel="noopener"
+                      class="font-semibold text-fg hover:text-accent-text transition-colors"
+                    >
+                      {d.author}
+                    </a>
+                  ) : (
+                    <span class="font-semibold text-fg">{d.author}</span>
+                  )}
+                </div>
+                {authorSkillCount > 1 && (
+                  <a
+                    href={withBase(`/?author=${encodeURIComponent(authorSlug)}`)}
+                    class="group mt-0.5 inline-flex items-center gap-1 text-xs font-medium text-muted hover:text-accent-text transition-colors"
+                  >
+                    View all {authorSkillCount} skills
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      class="h-3 w-3 transition-transform group-hover:translate-x-0.5"
+                      aria-hidden="true"
+                    >
+                      <path d="M5 12h14M13 6l6 6-6 6" />
+                    </svg>
+                  </a>
+                )}
+              </div>
+            </div>
+          )
+        }
+
+        <div class="mt-4 flex items-center gap-2">
+          <a
+            href="#rate"
+            class="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-2 px-3 py-1 text-sm font-medium text-fg hover:border-accent/50 hover:text-fg transition-colors"
+            title={`Rate this ${noun}`}
+          >
+            <span aria-hidden="true">👍</span>
+            <span>{rating}</span>
+            <span class="text-muted">{rating === 1 ? "rating" : "ratings"}</span>
+          </a>
+        </div>
 
         {
           d.tags.length > 0 && (
@@ -70,7 +242,7 @@ if (updated && updated !== created) meta.push(["Updated", updated]);
               {d.tags.map((tag) => (
                 <a
                   href={withBase(`/tags/${encodeURIComponent(tag)}`)}
-                  class="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-sm text-slate-300 hover:border-brand-500/50 hover:text-white transition-colors"
+                  class="rounded-full border border-border bg-surface-2 px-3 py-1 text-sm text-muted hover:border-accent/50 hover:text-fg transition-colors"
                 >
                   {tag}
                 </a>
@@ -79,39 +251,105 @@ if (updated && updated !== created) meta.push(["Updated", updated]);
           )
         }
 
-        <hr class="my-7 border-white/5" />
+        <hr class="my-7 border-border" />
 
         {
-          d.agentDescription && (
-            <div class="mb-6">
-              <h2 class="mb-2 text-sm font-semibold uppercase tracking-wider text-brand-300">
-                Description
-              </h2>
-              <p class="text-slate-300">{d.agentDescription}</p>
+          GuideContent ? (
+            <article class="prose max-w-none dark:prose-invert prose-headings:text-fg prose-a:text-accent-text prose-strong:text-fg prose-code:text-accent-text prose-code:before:content-[''] prose-code:after:content-[''] prose-table:text-muted prose-th:text-fg">
+              <GuideContent />
+            </article>
+          ) : isAutomation && automation ? (
+            <div>
+              <div class="mb-6">
+                <h2 class="mb-2 text-sm font-semibold uppercase tracking-wider text-accent-text">
+                  Trigger
+                </h2>
+                <p class="flex items-center gap-2 text-muted">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    class="h-4 w-4 shrink-0 text-accent-text"
+                  >
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M12 7v5l3 2" />
+                  </svg>
+                  <span>
+                    <span class="font-medium text-fg">
+                      {automation.triggerType === "condition"
+                        ? "Runs on a condition"
+                        : "Runs on a schedule"}
+                    </span>
+                    {" — "}
+                    {automation.scheduleSummary}
+                  </span>
+                </p>
+              </div>
+
+              <div class="mb-3 flex items-baseline gap-2">
+                <h2 class="text-sm font-semibold uppercase tracking-wider text-accent-text">
+                  Steps
+                </h2>
+                <span class="text-xs text-subtle">
+                  {automation.steps.length}{" "}
+                  {automation.steps.length === 1 ? "step" : "steps"}
+                </span>
+              </div>
+              <ol class="space-y-6">
+                {automation.steps.map((step, i) => (
+                  <li>
+                    <div class="mb-2 flex items-center gap-2.5">
+                      <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-bold text-white">
+                        {i + 1}
+                      </span>
+                      <h3 class="font-semibold text-fg">
+                        {step.label || `Step ${i + 1}`}
+                      </h3>
+                    </div>
+                    <pre
+                      class="max-h-[28rem] overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-surface-2 px-4 py-3.5 font-mono text-[13px] leading-relaxed text-muted"
+                      set:text={step.prompt}
+                    />
+                  </li>
+                ))}
+              </ol>
             </div>
+          ) : (
+            <>
+              {d.agentDescription && (
+                <div class="mb-6">
+                  <h2 class="mb-2 text-sm font-semibold uppercase tracking-wider text-accent-text">
+                    Description
+                  </h2>
+                  <p class="text-muted">{d.agentDescription}</p>
+                </div>
+              )}
+
+              <h2 class="mb-3 text-sm font-semibold uppercase tracking-wider text-accent-text">
+                Instructions
+              </h2>
+              <article class="prose max-w-none dark:prose-invert prose-headings:text-fg prose-a:text-accent-text prose-strong:text-fg prose-code:text-accent-text prose-code:before:content-[''] prose-code:after:content-[''] prose-table:text-muted prose-th:text-fg">
+                <Content />
+              </article>
+            </>
           )
         }
-
-        <h2 class="mb-3 text-sm font-semibold uppercase tracking-wider text-brand-300">
-          Instructions
-        </h2>
-        <article
-          class="prose prose-invert max-w-none prose-headings:text-white prose-a:text-brand-300 prose-strong:text-white prose-code:text-brand-200 prose-code:before:content-[''] prose-code:after:content-[''] prose-table:text-slate-300 prose-th:text-white"
-        >
-          <Content />
-        </article>
       </div>
 
       <!-- Sidebar -->
-      <aside class="lg:sticky lg:top-20 lg:self-start">
-        <div class="rounded-2xl border border-white/5 bg-ink-900 p-5">
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500">
+      <aside class="order-first lg:order-none lg:sticky lg:top-20 lg:self-start">
+        <div class="rounded-2xl border border-border bg-surface p-5">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-subtle">
             Works with
           </h3>
           <div class="mt-2 flex flex-wrap gap-2">
             {
               d.platforms.map((platform) => (
-                <span class="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-sm font-medium text-slate-200">
+                <span class="flex items-center gap-1.5 rounded-full border border-border bg-surface-2 px-3 py-1 text-sm font-medium text-fg">
                   <span
                     class="h-2 w-2 rounded-full"
                     style={`background:${PLATFORM_COLORS[platform]}`}
@@ -122,70 +360,187 @@ if (updated && updated !== created) meta.push(["Updated", updated]);
             }
           </div>
 
-          <hr class="my-5 border-white/5" />
+          <hr class="my-5 border-border" />
 
-          <h3 class="text-sm font-semibold text-white">Add this skill</h3>
-          <p class="mt-1 text-xs text-slate-400">
-            Download the instructions and add them to {
-              d.platforms.length === 1 ? d.platforms[0] : "your platform"
-            }.
+          <h3 class="text-sm font-semibold text-fg">
+            {isPlugin ? "Add this plugin" : isAutomation ? "Add this automation" : "Add this skill"}
+          </h3>
+          <p class="mt-1 text-xs text-muted">
+            {
+              isPlugin
+                ? "Download the plugin package and install it in Microsoft 365 Copilot Cowork."
+                : isInstaller
+                ? "Download the installer (.zip), unzip it, and ask Microsoft Scout to follow INSTALL.md \u2014 Scout creates the automation for you."
+                : isAutomation
+                ? "Download the automation and import it into Microsoft Scout (Automations \u203a Import)."
+                : `Download the ${
+                    d.bundle ? "bundle" : "instructions"
+                  } and add ${d.bundle ? "it" : "them"} to ${
+                    d.platforms.length === 1 ? d.platforms[0] : "your platform"
+                  }.`
+            }
           </p>
 
-          <div class="mt-4 flex flex-col gap-2">
-            <a
-              href={withBase(`/skills/${skill.id}.md`)}
-              download={`${skill.id}.md`}
-              class="flex items-center justify-center gap-2 rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-500 transition-colors"
-            >
+          <div class="mt-4 rounded-lg border border-border bg-surface-2 p-3.5">
+            <div class="flex items-start gap-2.5">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
                 stroke-width="2"
-                class="h-4 w-4"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                class="mt-0.5 h-4 w-4 shrink-0 text-amber-500"
+                aria-hidden="true"
               >
-                <path
-                  d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"></path>
+                <path d="M12 3 4 6v5c0 4.5 3.2 7.9 8 9 4.8-1.1 8-4.5 8-9V6l-8-3z" />
+                <path d="M12 8v4" />
+                <path d="M12 16h.01" />
               </svg>
-              Download .md
-            </a>
-            {
-              d.bundle && (
-                <a
-                  href={withBase(`/${d.bundle}`)}
-                  download
-                  class="flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/10 transition-colors"
+              <div>
+                <p class="text-xs font-semibold text-fg">Add only what you trust</p>
+                <label
+                  for="trust-ack"
+                  class="mt-2 flex cursor-pointer items-start gap-2 text-xs leading-relaxed text-muted"
                 >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    class="h-4 w-4"
+                  <input
+                    type="checkbox"
+                    id="trust-ack"
+                    class="mt-0.5 h-3.5 w-3.5 shrink-0 cursor-pointer rounded border-border accent-accent"
+                  />
+                  <span>
+                    I understand I should only add {noun}s from sources I trust.
+                    This {noun} runs with my agent's permissions.
+                  </span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div id="download-actions" class="mt-3 flex flex-col gap-2">
+            {
+              isPlugin ? (
+                d.bundle && (
+                  <a
+                    href={withBase(`/${d.bundle}`)}
+                    download
+                    data-clarity-event="skill_download"
+                    data-clarity-skill={skill.id}
+                    data-clarity-download-type="plugin"
+                    data-download-gated
+                    aria-disabled="true"
+                    class="flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-accent-fg hover:opacity-90 transition-opacity pointer-events-none opacity-50 cursor-not-allowed"
                   >
-                    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
-                  </svg>
-                  Download bundle
-                </a>
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                      class="h-4 w-4"
+                    >
+                      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
+                    </svg>
+                    Download plugin package (.zip)
+                  </a>
+                )
+              ) : isAutomation ? (
+                d.bundle && (
+                  <a
+                    href={withBase(`/${d.bundle}`)}
+                    download={isInstaller ? `${skill.id}.zip` : `${skill.id}.json`}
+                    data-clarity-event="skill_download"
+                    data-clarity-skill={skill.id}
+                    data-clarity-download-type={isInstaller ? "automation-installer" : "automation"}
+                    data-download-gated
+                    aria-disabled="true"
+                    class="flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-accent-fg hover:opacity-90 transition-opacity pointer-events-none opacity-50 cursor-not-allowed"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      class="h-4 w-4"
+                    >
+                      <path
+                        d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                    {isInstaller ? "Download automation installer (.zip)" : "Download automation (.json)"}
+                  </a>
+                )
+              ) : (
+                <>
+                  {d.bundle ? (
+                    <a
+                      href={withBase(`/${d.bundle}`)}
+                      download
+                      data-clarity-event="skill_download"
+                      data-clarity-skill={skill.id}
+                      data-clarity-download-type="bundle"
+                      data-download-gated
+                      aria-disabled="true"
+                      class="flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-accent-fg hover:opacity-90 transition-opacity pointer-events-none opacity-50 cursor-not-allowed"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                        class="h-4 w-4"
+                      >
+                        <path d="M3 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
+                      </svg>
+                      Download bundle (.zip)
+                    </a>
+                  ) : (
+                    <a
+                      href={withBase(`/skills/${skill.id}.md`)}
+                      download="SKILL.md"
+                      data-clarity-event="skill_download"
+                      data-clarity-skill={skill.id}
+                      data-clarity-download-type="markdown"
+                      data-download-gated
+                      aria-disabled="true"
+                      class="flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-accent-fg hover:opacity-90 transition-opacity pointer-events-none opacity-50 cursor-not-allowed"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        class="h-4 w-4"
+                      >
+                        <path
+                          d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        />
+                      </svg>
+                      Download .md
+                    </a>
+                  )}
+                </>
               )
             }
           </div>
 
           {
             meta.length > 0 && (
-              <dl class="mt-5 space-y-2 border-t border-white/5 pt-4 text-sm">
+              <dl class="mt-5 space-y-2 border-t border-border pt-4 text-sm">
                 {meta.map(([k, v, href]) => (
                   <div class="flex justify-between gap-3">
-                    <dt class="text-slate-400">{k}</dt>
-                    <dd class="text-right font-medium text-slate-200">
+                    <dt class="text-muted">{k}</dt>
+                    <dd class="text-right font-medium text-fg">
                       {href ? (
                         <a
                           href={href}
                           target="_blank"
                           rel="noopener"
-                          class="text-brand-300 underline hover:text-brand-200 transition-colors"
+                          class="text-accent-text underline hover:opacity-80 transition-opacity"
                         >
                           {v}
                         </a>
@@ -199,18 +554,90 @@ if (updated && updated !== created) meta.push(["Updated", updated]);
             )
           }
 
-          <p class="mt-5 border-t border-white/5 pt-4 text-xs text-slate-500">
-            This skill is an example implementation provided as-is. See{" "}
+          <p class="mt-5 border-t border-border pt-4 text-xs text-subtle">
+            This {noun} is an example implementation provided as-is. See{" "}
             <a
               href="https://github.com/microsoft/cat-agent-skills/blob/main/SUPPORT.md"
               target="_blank"
               rel="noopener"
-              class="underline hover:text-slate-300 transition-colors"
+              class="underline hover:text-fg transition-colors"
               >Support</a
             >{" "}for how to get help.
           </p>
         </div>
       </aside>
     </div>
+
+    <section id="rate" class="mt-10 scroll-mt-24 border-t border-border pt-8">
+      <h2 class="text-sm font-semibold uppercase tracking-wider text-accent-text">
+        Rate &amp; discuss this {noun}
+      </h2>
+      {
+        RATINGS_ENABLED ? (
+          <>
+            <p class="mt-2 text-sm text-muted">
+              Give this {noun} a 👍 with your GitHub account. Ratings power the
+              gallery's "Top rated" sort (refreshed on each deploy).
+            </p>
+            <div class="mt-5">
+              <script
+                is:inline
+                src="https://giscus.app/client.js"
+                data-repo={GISCUS_REPO}
+                data-repo-id={GISCUS_REPO_ID}
+                data-category={GISCUS_CATEGORY}
+                data-category-id={GISCUS_CATEGORY_ID}
+                data-mapping="specific"
+                data-term={skill.id}
+                data-strict="1"
+                data-reactions-enabled="1"
+                data-emit-metadata="0"
+                data-input-position="bottom"
+                data-theme="light"
+                data-lang="en"
+                crossorigin="anonymous"
+                async
+              />
+            </div>
+          </>
+        ) : (
+          <p class="mt-2 text-sm text-muted">
+            Ratings open in a{" "}
+            <a
+              href={`https://github.com/${GISCUS_REPO}/discussions`}
+              target="_blank"
+              rel="noopener"
+              class="text-accent-text underline hover:opacity-80 transition-opacity"
+            >
+              GitHub Discussion
+            </a>{" "}
+            for each skill. This gallery isn't wired to a Discussions category
+            yet, so voting is temporarily unavailable.
+          </p>
+        )
+      }
+    </section>
   </div>
+  {/* Keep the giscus embed's theme in sync with the light/dark toggle. */}
+  <script
+    is:inline
+    set:html={`(function(){function frame(){return document.querySelector('iframe.giscus-frame');}function themeFor(){return document.documentElement.getAttribute('data-theme')==='dark'?'dark':'light';}function apply(){var f=frame();if(!f||!f.contentWindow)return;f.contentWindow.postMessage({giscus:{setConfig:{theme:themeFor()}}},'https://giscus.app');}document.addEventListener('themechange',apply);window.addEventListener('message',function(e){if(e.origin==='https://giscus.app'&&e.data&&e.data.giscus&&'discussion'in e.data.giscus){apply();}});})();`}
+  />
+  {/* Gate downloads behind the trust acknowledgement checkbox. */}
+  <script
+    is:inline
+    set:html={`(function(){var ack=document.getElementById('trust-ack');var actions=document.getElementById('download-actions');if(!ack||!actions)return;var links=actions.querySelectorAll('[data-download-gated]');var locked=['pointer-events-none','opacity-50','cursor-not-allowed'];function sync(){var on=ack.checked;links.forEach(function(l){if(on){locked.forEach(function(c){l.classList.remove(c);});l.removeAttribute('aria-disabled');}else{locked.forEach(function(c){l.classList.add(c);});l.setAttribute('aria-disabled','true');}});}actions.addEventListener('click',function(e){if(!ack.checked){var l=e.target.closest('[data-download-gated]');if(l){e.preventDefault();ack.focus();}}});ack.addEventListener('change',sync);sync();})();`}
+  />
+  {
+    ANALYTICS_ENABLED && (
+      <script
+        is:inline
+        set:html={`(function(){function fire(){if(typeof window.clarity!=="function"){return setTimeout(fire,300);}window.clarity("set","skill",${JSON.stringify(
+          skill.id
+        )});window.clarity("set","skillType",${JSON.stringify(
+          d.type
+        )});window.clarity("event","skill_view");}fire();})();`}
+      />
+    )
+  }
 </Layout>
