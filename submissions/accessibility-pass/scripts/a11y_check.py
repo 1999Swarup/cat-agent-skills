@@ -526,8 +526,21 @@ def run(path: str) -> list[dict]:
         raise SystemExit(
             f"Unsupported file type {extension!r}. Supported: {', '.join(sorted(CHECKERS))}"
         )
-    findings = checker(path)
-    findings.sort(key=lambda f: (SEVERITY_ORDER.get(f["severity"], 9), f["location"]))
+
+    try:
+        findings = checker(path)
+    except ImportError as exc:
+        if extension == ".pptx":
+            raise SystemExit(
+                "python-pptx is required for .pptx files. Install it with: python -m pip install python-pptx"
+            ) from exc
+        if extension == ".docx":
+            raise SystemExit(
+                "python-docx is required for .docx files. Install it with: python -m pip install python-docx"
+            ) from exc
+        raise SystemExit(f"Missing Python dependency for {extension} files: {exc}") from exc
+
+    findings.sort(key=lambda f: (SEVERITY_ORDER.get(f[\"severity\"], 9), f[\"location\"]))
     return findings
 
 
