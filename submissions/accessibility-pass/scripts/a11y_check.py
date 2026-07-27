@@ -10,7 +10,7 @@ such as whether alt text is *accurate*, whether a reading order makes *sense*,
 or whether a caption is *correct*, are left to the agent reading these findings.
 
 Usage:
-    python a11y_check.py <file> [--json]
+    python scripts/a11y_check.py <file> [--json]
 
 Requires python-pptx for .pptx and python-docx for .docx. HTML and Markdown are
 handled with the standard library only.
