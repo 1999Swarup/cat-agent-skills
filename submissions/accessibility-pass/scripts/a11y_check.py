@@ -42,9 +42,12 @@ def _luminance(rgb: tuple[int, int, int]) -> float:
 
 
 def contrast_ratio(fg: tuple[int, int, int], bg: tuple[int, int, int]) -> float:
+    """Unrounded WCAG contrast ratio. Round only for display, not before a
+    threshold comparison, a ratio of 4.496 must not round up to a passing
+    4.50 against a 4.5 requirement."""
     a, b = _luminance(fg), _luminance(bg)
     lighter, darker = max(a, b), min(a, b)
-    return round((lighter + 0.05) / (darker + 0.05), 2)
+    return (lighter + 0.05) / (darker + 0.05)
 
 
 def parse_color(value: str) -> tuple[int, int, int] | None:
@@ -61,7 +64,9 @@ def parse_color(value: str) -> tuple[int, int, int] | None:
         return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
     m = re.fullmatch(r"rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,[^)]*)?\)", value)
     if m:
-        return (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        # CSS clamps out-of-range channel values (e.g. rgb(300,0,0)) rather
+        # than rejecting them; match that instead of leaving them unbounded.
+        return tuple(min(255, int(c)) for c in m.groups())  # type: ignore[return-value]
     return None
 
 
@@ -252,7 +257,7 @@ def _pptx_contrast(shape, where: str) -> list[dict]:
             if ratio < threshold:
                 findings.append(finding(
                     "Warning", "Sufficient contrast between text and background", where,
-                    f"{run.text.strip()[:40]!r} is {ratio}:1 against its fill "
+                    f"{run.text.strip()[:40]!r} is {round(ratio, 2)}:1 against its fill "
                     f"(WCAG AA needs {threshold}:1).",
                     "Darken the text or lighten the fill until the ratio is met.",
                 ))
@@ -314,8 +319,11 @@ def check_docx(path: str) -> list[dict]:
 
     for index, table in enumerate(document.tables, start=1):
         where = f"Table {index}"
-        header_repeat = _find_local(table._tbl, "tblHeader")
-        if header_repeat is None:
+        # tblHeader must be set specifically on the first row to mean
+        # anything; a mark on a later row doesn't repeat as a header row and
+        # shouldn't count as satisfying this rule.
+        first_row_header = table.rows and _find_local(table.rows[0]._tr, "tblHeader") is not None
+        if not first_row_header:
             findings.append(finding(
                 "Error", "Tables specify column header information", where,
                 "The first row is not marked as a repeating header row.",
@@ -418,7 +426,7 @@ def _style_contrast(style: str, where: str) -> list[dict]:
         return []
     return [finding(
         "Warning", "Sufficient contrast between text and background", where,
-        f"Inline style gives {ratio}:1 (WCAG AA needs {AA_NORMAL}:1 for normal text).",
+        f"Inline style gives {round(ratio, 2)}:1 (WCAG AA needs {AA_NORMAL}:1 for normal text).",
         "Adjust the colour pair until it reaches 4.5:1.",
     )]
 
@@ -470,11 +478,16 @@ def check_markdown(path: str) -> list[dict]:
             where = f"line {number}"
             for match in _MD_IMAGE.finditer(line):
                 if not match.group("alt").strip():
+                    # Empty alt (![](path)) is the standard Markdown/HTML
+                    # convention for "this image is decorative", not
+                    # automatically a failure the way a missing attribute
+                    # would be in pptx/docx, so ask rather than demand text.
                     findings.append(finding(
-                        "Error", "All non-text content has alternative text (alt text)",
+                        "Tip", "All non-text content has alternative text (alt text)",
                         where,
                         f"Image {match.group('src')[:60]!r} has empty alt text.",
-                        "Put a description between the brackets: ![what it shows](path).",
+                        "Confirm this image is purely decorative. If it conveys "
+                        "information, add a description: ![what it shows](path).",
                     ))
             for match in _MD_LINK.finditer(line):
                 text = match.group("text").strip().lower()

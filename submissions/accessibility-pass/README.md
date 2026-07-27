@@ -26,9 +26,12 @@ something marked decorative really is, and whether meaning is being carried by
 colour alone.
 
 The script needs `python-pptx` for PowerPoint files and `python-docx` for Word
-files. HTML and Markdown use the Python standard library only. Without a Python
-environment the skill still works; the agent reads the file and applies the same
-rules by hand, just less precisely.
+files. HTML and Markdown use the Python standard library only. Without a
+Python environment, HTML and Markdown still work: the agent reads the file
+directly and applies the same rules by hand, just less precisely. PowerPoint
+and Word files don't have that fallback, they're zipped Office XML, not
+something to read as plain text, so without Python the skill asks the user to
+run Office's own Accessibility Checker and share what it finds instead.
 
 ## Known limits
 

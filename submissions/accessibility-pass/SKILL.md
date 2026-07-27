@@ -18,16 +18,23 @@ findings are recognisable and searchable.
 1. Get the file. Supported: `.pptx`, `.docx`, `.html`, `.md`. If the user pasted
    raw HTML or Markdown instead, save it to a file first.
 
-2. From this skill's root directory (the folder that contains `scripts/`), run the bundled checker when a Python environment is available:
+2. Run the bundled checker when a Python environment is available, from the
+   skill's own root directory (the folder containing `scripts/`), so the
+   relative path resolves:
 
    ```bash
    python scripts/a11y_check.py <file> --json
    ```
 
    It needs `python-pptx` for `.pptx` and `python-docx` for `.docx`; HTML and
-   Markdown need nothing beyond the standard library. If the environment has no
-   Python, or the import fails, say so plainly and carry on with step 3. Every
-   rule below can still be checked by reading the file, only less precisely.
+   Markdown need nothing beyond the standard library. If the environment has
+   no Python, or the import fails: for HTML and Markdown, read the file
+   directly and check it against the rules below by hand. For `.pptx` and
+   `.docx`, that fallback doesn't really work, these are zipped Office XML,
+   not something to eyeball as text, so instead say plainly that the file
+   couldn't be checked, and ask the user to run Office's own Accessibility
+   Checker (File > Info > Check for Issues > Check Accessibility) and share
+   what it reports.
 
 3. Add the judgement calls the script deliberately does not make:
 
@@ -71,8 +78,10 @@ findings are recognisable and searchable.
 - All non-text content has alternative text (alt text)
 - Tables specify column header information
 - All slides have titles
-- All sections have meaningful names
-- Document access is not restricted
+- All sections have meaningful names *(the bundled script doesn't check this;
+  ask the user or inspect the file's sections manually)*
+- Document access is not restricted *(the bundled script doesn't check this;
+  verify manually whether the file has IRM/password protection applied)*
 
 **Warnings**: content that is hard to use.
 
