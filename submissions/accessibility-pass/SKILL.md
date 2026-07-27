@@ -18,7 +18,7 @@ findings are recognisable and searchable.
 1. Get the file. Supported: `.pptx`, `.docx`, `.html`, `.md`. If the user pasted
    raw HTML or Markdown instead, save it to a file first.
 
-2. Run the bundled checker when a Python environment is available:
+2. From this skill's root directory (the folder that contains `scripts/`), run the bundled checker when a Python environment is available:
 
    ```bash
    python scripts/a11y_check.py <file> --json
