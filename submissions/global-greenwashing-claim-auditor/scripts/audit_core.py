@@ -6,9 +6,12 @@ from __future__ import annotations
 import argparse
 import csv
 import html
+import ipaddress
 import json
 import re
+import socket
 import sys
+import urllib.parse
 import urllib.request
 import zipfile
 from datetime import date
@@ -133,7 +136,7 @@ def audit_text(
             "Red",
             "vocabulary",
             "High-risk or broadly framed environmental vocabulary requires exact scope and evidence.",
-            red_hits,
+            sorted(set(red_hits + yellow_hits)),
         )
     elif yellow_hits:
         add_finding(
@@ -173,6 +176,15 @@ def audit_text(
             "vocabulary",
             "Certification or approval wording requires verification of the scheme, scope, and status.",
             label_hits,
+        )
+    if future_hit:
+        add_finding(
+            findings,
+            "ANY",
+            "ANY-FUTURE",
+            "Yellow",
+            "vocabulary",
+            "Future environmental commitments require a defined scope, measurable milestones, and a credible delivery plan.",
         )
 
     if "CA" in jurisdictions:
@@ -310,6 +322,8 @@ def audit_text(
                 "Disposal conditions, required consumer action, and realistic infrastructure access must be prominent.",
             )
 
+    if not findings:
+        return None
     overall = max((f["rating"] for f in findings), key=RISK_ORDER.get)
     return {
         "source": source,
@@ -324,7 +338,12 @@ def audit_text(
     }
 
 
-def read_csv_units(path: Path, text_columns: list[str], max_items: int | None):
+def read_csv_units(
+    path: Path,
+    text_columns: list[str],
+    max_items: int | None,
+    rules: Rules,
+):
     delimiter = "\t" if path.suffix.lower() == ".tsv" else ","
     with path.open("r", encoding="utf-8-sig", errors="replace", newline="") as handle:
         reader = csv.DictReader(handle, delimiter=delimiter)
@@ -335,7 +354,7 @@ def read_csv_units(path: Path, text_columns: list[str], max_items: int | None):
                 raise ValueError(f"Columns not found: {missing}; available columns: {headers}")
             selected = text_columns
         else:
-            hints = Rules(DEFAULT_RULES).data["text_column_hints"]
+            hints = rules.data["text_column_hints"]
             selected = [
                 header for header in headers
                 if any(hint in header.lower() for hint in hints)
@@ -359,10 +378,19 @@ def read_docx_units(path: Path, max_items: int | None):
     count = 0
     paragraph_index = 0
     table_cell_index = 0
+    table_paragraphs = {
+        id(paragraph)
+        for cell in root.iter()
+        if cell.tag.rsplit("}", 1)[-1] == "tc"
+        for paragraph in cell.iter()
+        if paragraph.tag.rsplit("}", 1)[-1] == "p"
+    }
     for element in root.iter():
         local = element.tag.rsplit("}", 1)[-1]
         if local == "p":
             paragraph_index += 1
+            if id(element) in table_paragraphs:
+                continue
             text = xml_text(element)
             if text:
                 count += 1
@@ -390,13 +418,33 @@ def read_pptx_units(path: Path, max_items: int | None):
         for slide_name in slide_names:
             slide_number = int(re.search(r"(\d+)", Path(slide_name).stem).group(1))
             root = ET.fromstring(archive.read(slide_name))
-            for shape_number, shape in enumerate(root.iter(), start=1):
+            shape_number = 0
+            for shape in root.iter():
                 if shape.tag.rsplit("}", 1)[-1] not in ("sp", "graphicFrame"):
                     continue
+                shape_number += 1
                 text = xml_text(shape)
                 if text:
+                    properties = next(
+                        (
+                            child
+                            for child in shape.iter()
+                            if child.tag.rsplit("}", 1)[-1] == "cNvPr"
+                        ),
+                        None,
+                    )
+                    shape_id = properties.get("id") if properties is not None else None
+                    shape_name = properties.get("name") if properties is not None else None
+                    if shape_id and shape_name:
+                        shape_location = f"shape {shape_id} ({shape_name})"
+                    elif shape_id:
+                        shape_location = f"shape {shape_id}"
+                    elif shape_name:
+                        shape_location = f"shape {shape_number} ({shape_name})"
+                    else:
+                        shape_location = f"shape {shape_number}"
                     count += 1
-                    yield f"slide {slide_number}, shape {shape_number}", text
+                    yield f"slide {slide_number}, {shape_location}", text
                     if max_items and count >= max_items:
                         return
 
@@ -491,12 +539,47 @@ class VisibleTextParser(HTMLParser):
         self.current = []
 
 
+def validate_public_url(url: str) -> None:
+    parsed = urllib.parse.urlsplit(url)
+    if parsed.scheme.lower() not in ("http", "https"):
+        raise ValueError("Only public HTTP/HTTPS URLs are supported.")
+    if not parsed.hostname or parsed.username or parsed.password:
+        raise ValueError("URL must contain a public hostname without credentials.")
+    try:
+        port = parsed.port or (443 if parsed.scheme.lower() == "https" else 80)
+    except ValueError as error:
+        raise ValueError("URL contains an invalid port.") from error
+
+    try:
+        addresses = {
+            result[4][0]
+            for result in socket.getaddrinfo(
+                parsed.hostname,
+                port,
+                type=socket.SOCK_STREAM,
+            )
+        }
+    except socket.gaierror as error:
+        raise ValueError(f"Unable to resolve URL hostname: {parsed.hostname}") from error
+    if not addresses or any(not ipaddress.ip_address(address).is_global for address in addresses):
+        raise ValueError("URL hostname must resolve only to public IP addresses.")
+
+
+class PublicUrlRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        validate_public_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 def read_url_units(url: str, max_items: int | None):
+    validate_public_url(url)
     request = urllib.request.Request(
         url,
         headers={"User-Agent": "GlobalGreenwashingClaimAuditor/1.0"},
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
+    opener = urllib.request.build_opener(PublicUrlRedirectHandler())
+    with opener.open(request, timeout=30) as response:
+        validate_public_url(response.geturl())
         content_type = response.headers.get_content_type()
         if content_type not in ("text/html", "application/xhtml+xml", "text/plain"):
             raise ValueError(f"Unsupported URL content type: {content_type}")
@@ -581,7 +664,7 @@ def run(input_kind: str, argv=None) -> int:
     source = ""
     if input_kind == "csv":
         source = str(args.input)
-        units = read_csv_units(args.input, args.text_column, args.max_items)
+        units = read_csv_units(args.input, args.text_column, args.max_items, rules)
     elif input_kind == "xlsx":
         source = str(args.input)
         units = read_xlsx_units(args.input, args.sheet, args.max_items)
@@ -592,8 +675,6 @@ def run(input_kind: str, argv=None) -> int:
         source = str(args.input)
         units = read_pptx_units(args.input, args.max_items)
     elif input_kind == "url":
-        if not re.match(r"^https?://", args.url, re.IGNORECASE):
-            raise ValueError("Only public HTTP/HTTPS URLs are supported.")
         source = args.url
         units = read_url_units(args.url, args.max_items)
     else:

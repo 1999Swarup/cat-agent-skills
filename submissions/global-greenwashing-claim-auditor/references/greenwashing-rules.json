@@ -99,8 +99,7 @@
   ],
   "future_patterns": [
     "\\b(?:will|aims? to|plans? to|committed to|target(?:s|ing)?|goal)\\b",
-    "\\bby\\s+20\\d{2}\\b",
-    "\\bnet[ -]?zero\\b"
+    "\\bby\\s+20\\d{2}\\b"
   ],
   "absolute_patterns": [
     "\\b(?:zero|no)\\s+(?:environmental\\s+)?impact\\b",
