@@ -526,7 +526,6 @@ def run(path: str) -> list[dict]:
         raise SystemExit(
             f"Unsupported file type {extension!r}. Supported: {', '.join(sorted(CHECKERS))}"
         )
-
     try:
         findings = checker(path)
     except ImportError as exc:
@@ -540,7 +539,7 @@ def run(path: str) -> list[dict]:
             ) from exc
         raise SystemExit(f"Missing Python dependency for {extension} files: {exc}") from exc
 
-    findings.sort(key=lambda f: (SEVERITY_ORDER.get(f[\"severity\"], 9), f[\"location\"]))
+    findings.sort(key=lambda f: (SEVERITY_ORDER.get(f["severity"], 9), f["location"]))
     return findings
 
 
