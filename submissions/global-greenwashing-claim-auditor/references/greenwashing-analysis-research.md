@@ -1,7 +1,7 @@
 # Greenwashing Legal and Regulatory Research
 
-**Research date:** 2026-07  
-**Scope:** Canada, the European Union, and the United Kingdom  
+**Research date:** 2026-07
+**Scope:** Canada, the European Union, and the United Kingdom
 **Purpose:** A practical compliance baseline for evaluating public environmental claims. This is not legal advice.
 
 ## Jurisdiction codes
