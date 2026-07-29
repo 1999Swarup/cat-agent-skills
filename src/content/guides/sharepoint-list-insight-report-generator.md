@@ -84,7 +84,7 @@ Insights are prioritized based on business relevance and actionability.
 
 ## Interactive HTML Report
 
-The generated report is a single HTML5 file with inline CSS and JavaScript; Chart.js (version 4) may load from its CDN as the only external dependency:
+The generated report is a single HTML5 file with inline CSS and JavaScript; Chart.js (version 4) may load from an exact versioned CDN URL with matching SRI integrity metadata and `crossorigin="anonymous"` as the only external dependency:
 
 * Chart.js
 
@@ -139,8 +139,7 @@ Provides:
 
 Export formats:
 
-* CSV
-* Excel
+* CSV (Excel-compatible)
 * Copy to clipboard
 
 ### Record Detail View
