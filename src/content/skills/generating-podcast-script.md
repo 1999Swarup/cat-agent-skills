@@ -5,8 +5,8 @@ agentDescription: "Use this skill whenever the user asks to write, generate, or 
 platforms: [Copilot Studio]
 tags: [content, podcast, audio, text-to-speech, ssml, news]
 author: Remi Dyon
-authorUrl: "https://github.com/remidyon"
-authorGithub: remidyon
+authorUrl: "https://github.com/raemone"
+authorGithub: raemone
 version: 1.1.0
 createdAt: 2026-07-28
 updatedAt: 2026-07-28
