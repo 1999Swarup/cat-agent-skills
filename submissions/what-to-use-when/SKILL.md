@@ -95,9 +95,9 @@ quoted phrasings are cues — generalize to the intent, don't pattern-match.
    over $10k", "clean this CSV", "chart this" — within one file.
 8. **One deck → Copilot in PowerPoint.** "Turn these notes into slides", "build
    a few slides", "suggest a layout".
-9. **Deep research → Researcher** (included, 25/mo). "Research our competitors /
+9. **Deep research → Researcher** (included; subject to usage limits). "Research our competitors /
    this company / this market", "write a cited report".
-10. **Data analysis → Analyst** (included, 25/mo). "Analyze this dataset", "find
+10. **Data analysis → Analyst** (included; subject to usage limits). "Analyze this dataset", "find
     trends / anomalies", "run the numbers".
 11. **Domain workflow → specialized 1P agent** (Sales / Service / Finance) —
     licensing varies; confirm entitlement.
