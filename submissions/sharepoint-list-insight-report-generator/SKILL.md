@@ -1,6 +1,6 @@
 ---
 name: sharepoint-list-insight-report-generator
-description: Use this skill whenever the user asks for an insights/reporting analysis of a SharePoint list from a connected SharePoint knowledge source; first validate the list exists, then generate and save a single-file interactive HTML report to the site’s Documents library and return its SharePoint URL.
+description: Use this skill whenever the user asks for an insights/reporting analysis of a SharePoint list from a connected SharePoint knowledge source; first validate the list exists, then generate and save a single-file interactive HTML report to a pre-approved SharePoint destination whose audience is no broader than the source list and items, and return its SharePoint URL.
 ---
 Before starting, verify that configured SharePoint connector actions, agent flows, or equivalent tools can discover approved lists and their schemas, retrieve list items page by page, and invoke **Create file** to return the created file's URL or path. A SharePoint knowledge source alone does not guarantee these capabilities. If any capability is unavailable, stop and name the missing capability.
 
@@ -155,9 +155,9 @@ Prioritize actionable recommendations.
 
 ## Step 5 – Build Interactive HTML Report
 
-Produce a single HTML file with all CSS and JavaScript embedded inline, except that Chart.js (version 4) may be loaded from a CDN as the only permitted external dependency. Do not use external Bootstrap, DataTables, fonts, stylesheets, scripts, or other CDN resources. Implement table filtering, sorting, pagination, and responsive styling using embedded CSS and JavaScript.
+Produce a single HTML file with all CSS and JavaScript embedded inline, except that Chart.js (version 4) may be loaded from an exact versioned CDN URL with matching SRI `integrity` metadata and `crossorigin="anonymous"` as the only permitted external dependency. If the exact version and matching SRI cannot be verified, do not load the CDN asset and use embedded browser APIs instead. Do not use external Bootstrap, DataTables, fonts, stylesheets, scripts, or other CDN resources. Implement table filtering, sorting, pagination, and responsive styling using embedded CSS and JavaScript.
 
-Treat SharePoint field names and values as untrusted data. Serialize report data with a JSON serializer and insert it into the page using `textContent`, `document.createElement`, and other safe DOM APIs, never `innerHTML`. Render rich-text fields as plain text unless a trusted sanitizer is available.
+Treat SharePoint field names and values as untrusted data. Use a real JSON serializer; before embedding serialized data in a `<script type="application/json">` element, escape `<`, `>`, `&`, U+2028, and U+2029, then read it via `textContent` and parse it. Insert data-driven content using `textContent`, `document.createElement`, and other safe DOM APIs, never `innerHTML`. Render rich-text fields as plain text unless a trusted sanitizer is available.
 
 ### Technologies
 
@@ -212,8 +212,7 @@ Requirements:
 - Pagination
 - Column visibility controls
 - Export buttons:
-  - CSV
-  - Excel
+  - CSV (Excel-compatible)
   - Copy
 
 For CSV export, neutralize spreadsheet formulas by prefixing an apostrophe when a cell's first non-whitespace or control character is `=`, `+`, `-`, or `@`.
@@ -247,12 +246,12 @@ Requirements:
 
 After generating the HTML report:
 
-- Generate a unique name using a sanitized list name (replace spaces with `_` and remove/replace characters SharePoint disallows in filenames).
+- Generate a unique name using a sanitized list name: retain `[A-Za-z0-9_-]`, replace other runs with `_`, trim leading and trailing separators, cap the sanitized list-name portion at 80 characters, and use `SharePointList` if empty.
 
    Report_<SanitizedListName>_<yyyyMMdd_HHmmss>.html
 
 - Verify that the configured destination's audience is no broader than the source list and included items. If this cannot be verified, do not upload the report.
-- Invoke the configured SharePoint **Create file** action or flow to save the report in the site's Documents library.
+- Invoke the configured SharePoint **Create file** action or flow to save the report in the pre-approved SharePoint destination whose audience is no broader than the source list and included items.
 - Capture the URL or path returned by **Create file** and use it in the response. If file creation fails or returns no URL or path, report the failure honestly and never guess a URL.
 
 ---
@@ -266,7 +265,7 @@ Return:
 3. Report file name.
 4. List schema summary.
 5. Insights summary.
-6. Storage location within the SharePoint Documents library.
+6. Storage location within the configured SharePoint destination.
 
 ---
 
@@ -281,7 +280,7 @@ A successful execution must:
 - Analyze data.
 - Generate insights.
 - Create an interactive HTML report.
-- Save the report in the Documents library of the SharePoint site associated with the selected knowledge source.
+- Save the report in the pre-approved SharePoint destination whose audience is no broader than the source list and included items.
 - Return the direct SharePoint URL of the report.
 - Provide sortable tables.
 - Provide pagination.
