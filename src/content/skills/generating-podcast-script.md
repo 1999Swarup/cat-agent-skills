@@ -215,8 +215,8 @@ Only if they say yes:
    `outputFormat: riff-24khz-16bit-mono-pcm`.
 3. Decode the base64 response and save to `/app/created/<slug>_Podcast.wav`.
 
-If the document is too large for a single call, split it at a segment boundary,
-synthesize each part, and concatenate the decoded audio in order.
+If the document is too large for a single call, split it at a segment boundary and synthesize each part separately.
+When stitching, do NOT concatenate decoded RIFF/WAV bytes; instead, append the audio at the PCM-frame level (e.g., via Python’s `wave` module) and write a single valid `/app/created/<slug>_Podcast.wav` with one header.
 
 ```python
 import base64
