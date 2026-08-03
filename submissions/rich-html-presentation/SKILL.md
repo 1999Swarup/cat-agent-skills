@@ -60,7 +60,7 @@ If missing, re-create/re-attach — never report success unverified.
 ### Step 5a — Verify it survives a preview pane
 Before saying it's ready, check the finished HTML against the constraints in Step 2a. These are cheap text checks — do them on the file you actually produced:
 
-1. **Every `<script>` under ~1700 characters.** Measure them. If one is over, split it into smaller self-contained blocks — never leave a single large engine script.
+1. **Every `<script>` under ~1700 characters.** Measure them — but **strip HTML comments first**. The template's own `<head>` comment contains the literal text `<script>` as documentation, so a naive `<script>…</script>` regex matches from inside the comment and reports one enormous block that doesn't exist. If a real block is over, split it into smaller self-contained blocks — never leave a single large engine script.
 2. **No cross-block state.** No block may read a variable or `window.*` property that a different block created.
 3. **Counter total matches the real slide count** in the markup, not `01`.
 4. **`justify-content:safe center`** is still on `.slide`, and the two `@media (max-height: …)` blocks are present.
