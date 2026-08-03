@@ -15,9 +15,9 @@ description: >-
 If the deck is grounded in the user's world (a meeting/transcript, documents, a project, a product), retrieve it with the right tools (`SearchM365`, `ListCalendarView` + meeting-transcript tools, `ReadFileContent`, `web_search`) before authoring. Use clearly-marked placeholders (e.g. `[Add Q3 number]`) for anything you can't find — never invent names, numbers, quotes, or dates.
 
 ### Step 2 — Start from the template
-Read `references/template.html` and `references/components.md` from this skill folder. The template is the source of truth for the design system. **Copy its `<style>` block and all four `<script>` blocks verbatim** — do not restyle or rewrite the navigation/theme engine. Only the slide content, `<title>`, and `.brand` label change.
+Read `references/template.html` and `references/components.md` from this skill folder. The template is the source of truth for the design system. **Copy its `<style>` block and all five `<script>` blocks verbatim** — do not restyle or rewrite the navigation/theme engine. Only the slide content, `<title>`, and `.brand` label change.
 
-**The engine ships as four separate small scripts on purpose. Never merge them into one, and never make one depend on a variable from another** — see "Preview-surface constraints" below.
+**The engine ships as five separate small scripts on purpose. Never merge them into one, and never make one depend on a variable from another** — see "Preview-surface constraints" below. (The fifth is the optional speaker-notes tray; delete it wholesale if the deck has no notes.)
 
 ### Step 2a — Preview-surface constraints (why the engine looks the way it does)
 Decks get shared, and most recipients open them in an **embedded preview** — the Teams file-preview pane, Outlook's reading pane, a SharePoint preview — not a real browser tab. Those hosts rewrite the document before rendering, and they impose three limits that are easy to violate by accident:
@@ -39,6 +39,14 @@ These limits are **observed behavior, not documented vendor contract** — they 
 - **Use the full visual portfolio.** Aim for variety — don't build a deck of near-identical card grids. Across a typical deck reach for a spread of distinct components: a spine timeline, a bar chart wherever there are figures to compare, a color-accented `.plat` slide, a `.callout` for the one line to remember, a numbered `.asset-num` run, and `.steps` for a call to action. If the content contains any quantities (sales, counts, growth, rankings), render at least one `.bars` chart rather than listing the numbers as text — the user should not have to ask for a chart. Vary the layout from slide to slide so no two consecutive slides look the same.
 - First slide keeps `class="slide title-slide active"`; every other slide is `class="slide"`. **Set `<span id="tot">` to the real slide count** — the nav script sets it too, but hardcoding the truth means a deck whose script was blocked reports broken navigation instead of pretending to be a one-slide deck.
 - **Keep slides short enough to fit a short viewport.** A preview pane is roughly `1200×672` — much shorter than a browser window. The template's height media queries shrink the type scale, but they can't rescue a slide with eight dense cards. Prefer 4–6 cards; if a slide needs more, split it.
+
+### Step 3a — Speaker notes (optional)
+The template ships a collapsible notes tray. Author a slide's notes as a `<div class="spk">…</div>` **inside** its `<section class="slide">`; they never render on the slide itself, and the tray shows the note for whichever slide is active.
+
+- **N** toggles the tray, **Esc** collapses it, and a **Hide** link on the collapsed bar removes it from the screen entirely for presenting (**N** brings it back).
+- Add notes when the user asks for them, or when the deck will be presented by someone who wasn't in the room. Write what the presenter should *say* and watch for — not a re-reading of the slide.
+- **If a deck carries no notes, delete the tray** — its markup, its CSS block, and its script block. An empty tray is worse than no tray.
+- **Notes are not private.** They ship inside the same file and are one "view source" away. Never put anything in them you wouldn't hand to the recipient. For a deck going outside your organization, strip the `.spk` blocks from the file rather than relying on the tray being collapsed.
 
 ### Step 4 — Detect the channel, then write the file
 First determine which delivery surface is available — the tools differ by host, so pick the matching path:
@@ -71,11 +79,12 @@ If you can render the file, also load it at **1200×672** and confirm no slide o
 - A single self-contained `.html` file (inline CSS + JS, no external dependencies), delivered on the host's output surface — `output/` on artifact hosts, an attached file on Copilot Studio and similar.
 - Dark theme by default, follows the OS setting on load, with a working light/dark toggle.
 - Navigation: ← / → (also PageUp/Down, Space), Home/End, on-screen ‹ ›, F fullscreen, T theme, touch swipe.
+- Optional speaker-notes tray: N toggles, Esc collapses, and a Hide link removes the bar for presenting.
 - Tell the user the filename, the slide count, and the controls.
 
 ## Guardrails
 - **Never fabricate facts** — look up the user's real data first; use visible `[placeholders]` for gaps.
-- **Preserve the design system** — keep the template `<style>` and all four `<script>` blocks intact so every deck matches; don't hand-roll a different look.
+- **Preserve the design system** — keep the template `<style>` and all five `<script>` blocks intact so every deck matches; don't hand-roll a different look.
 - **Never consolidate the engine scripts** — they are split so embedded previews (Teams, Outlook, SharePoint) will execute them, and each is self-contained because those hosts may isolate every script's global scope. Merging them, or introducing a shared global between them, silently kills navigation for anyone who opens the deck in a preview pane.
 - **Self-contained only** — inline everything; no CDN links or external image URLs (embed or omit). This keeps the deck portable and offline-safe.
 - **Verify before claiming done** — confirm the file reached the user (artifact present in `output/`, or file attached to this turn) before saying it's ready.
