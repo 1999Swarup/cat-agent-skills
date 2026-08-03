@@ -68,10 +68,10 @@ If missing, re-create/re-attach — never report success unverified.
 ### Step 5a — Verify it survives a preview pane
 Before saying it's ready, check the finished HTML against the constraints in Step 2a. These are cheap text checks — do them on the file you actually produced:
 
-1. **Every `<script>` under ~1700 characters.** Measure them — but **strip HTML comments first**. The template's own `<head>` comment contains the literal text `<script>` as documentation, so a naive `<script>…</script>` regex matches from inside the comment and reports one enormous block that doesn't exist. If a real block is over, split it into smaller self-contained blocks — never leave a single large engine script.
+1. **Every `<script>` under ~1700 characters.** Measure them on the file as written — but **strip HTML *and* CSS comments first**. Both the `<head>` comment and a comment inside `<style>` contain the literal text `<script>` and `<section class="slide">` as documentation, so a naive regex matches from inside a comment and reports phantom blocks (or a wildly wrong slide count). Note that CRLF line endings add ~1 byte per line, so a block measured at 1500 with LF can read ~1560 with CRLF — measure the actual output file. If a real block is over, split it into smaller self-contained blocks — never leave a single large engine script.
 2. **No cross-block state.** No block may read a variable or `window.*` property that a different block created.
-3. **Counter total matches the real slide count** in the markup, not `01`.
-4. **`justify-content:safe center`** is still on `.slide`, and the two `@media (max-height: …)` blocks are present.
+3. **Counter total matches the real slide count** in the markup, not `01`. Count `<section class="slide">` elements *after* stripping comments — the documentation comments contain that literal string too.
+4. **`justify-content:safe center`** is still on `.slide` (with the plain `center` fallback declared before it), and the two `@media (max-height: …)` blocks are present.
 
 If you can render the file, also load it at **1200×672** and confirm no slide overflows (`scrollHeight > clientHeight`) and that → advances past slide 1. Report the slide count and that the preview checks passed.
 
