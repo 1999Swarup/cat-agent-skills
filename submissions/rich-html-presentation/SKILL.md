@@ -38,7 +38,7 @@ These limits are **observed behavior, not documented vendor contract** — they 
 - Compose each slide from the catalog (`.card` grids, `.callout`, `.chips`, `.steps`, the animated `.tf` spine timeline by default (static `.timeline` only as a deliberate quiet fallback), `.bars` bar chart for any numbers/ranking/comparison, `.flow-panel`/`.loop`, `.asset-num`, `.plat` color columns). Reuse the CSS variables and `cN` accent classes so both themes stay correct — avoid hard-coded light-on-dark hex.
 - **Use the full visual portfolio.** Aim for variety — don't build a deck of near-identical card grids. Across a typical deck reach for a spread of distinct components: a spine timeline, a bar chart wherever there are figures to compare, a color-accented `.plat` slide, a `.callout` for the one line to remember, a numbered `.asset-num` run, and `.steps` for a call to action. If the content contains any quantities (sales, counts, growth, rankings), render at least one `.bars` chart rather than listing the numbers as text — the user should not have to ask for a chart. Vary the layout from slide to slide so no two consecutive slides look the same.
 - First slide keeps `class="slide title-slide active"`; every other slide is `class="slide"`. **Set `<span id="tot">` to the real slide count** — the nav script sets it too, but hardcoding the truth means a deck whose script was blocked reports broken navigation instead of pretending to be a one-slide deck.
-- **Keep slides short enough to fit a short viewport.** A preview pane is roughly `1200×672` — much shorter than a browser window. The template's height media queries shrink the type scale, but they can't rescue a slide with eight dense cards. Prefer 4–6 cards; if a slide needs more, split it.
+- **Keep slides short enough to fit a short viewport.** A preview pane is roughly `1200×672` — much shorter than a browser window, and shorter still when the notes tray reserves space. The template's height media queries shrink the type scale, but they can't rescue a slide with eight dense cards. Prefer 4–6 cards; if a slide needs more, split it. A slide that fills the full height will collide with the fixed brand label at the top or the counter and nav at the bottom.
 
 ### Step 3a — Speaker notes (optional)
 The template ships a collapsible notes tray. Author a slide's notes as a `<div class="spk">…</div>` **inside** its `<section class="slide">`; they never render on the slide itself, and the tray shows the note for whichever slide is active.
@@ -66,14 +66,21 @@ Confirm the `.html` file actually reached the user before claiming done:
 If missing, re-create/re-attach — never report success unverified.
 
 ### Step 5a — Verify it survives a preview pane
-Before saying it's ready, check the finished HTML against the constraints in Step 2a. These are cheap text checks — do them on the file you actually produced:
+Before saying it's ready, check the finished HTML against the constraints in Step 2a. These are cheap text checks — do them on the file you actually produced.
 
-1. **Every `<script>` under ~1700 characters.** Measure them on the file as written — but **strip HTML *and* CSS comments first**. Both the `<head>` comment and a comment inside `<style>` contain the literal text `<script>` and `<section class="slide">` as documentation, so a naive regex matches from inside a comment and reports phantom blocks (or a wildly wrong slide count). Note that CRLF line endings add ~1 byte per line, so a block measured at 1500 with LF can read ~1560 with CRLF — measure the actual output file. If a real block is over, split it into smaller self-contained blocks — never leave a single large engine script.
+> **Strip HTML *and* CSS comments before counting anything.** The `<head>` comment and a comment inside `<style>` both quote the literal strings `<script>`, `<section class="slide">` and `<div class="spk">` as documentation. A regex that only strips `<!-- … -->` will report a phantom script block, an inflated slide count, or a phantom speaker note. This has produced a wrong answer on every one of those three counts — strip `/* … */` too, every time.
+
+1. **Every `<script>` under ~1700 characters**, measured on the file as written. CRLF line endings add ~1 byte per line, so a block that measures 1500 with LF reads ~1560 with CRLF. If a real block is over, split it into smaller self-contained blocks — never leave a single large engine script.
 2. **No cross-block state.** No block may read a variable or `window.*` property that a different block created.
-3. **Counter total matches the real slide count** in the markup, not `01`. Count `<section class="slide">` elements *after* stripping comments — the documentation comments contain that literal string too.
+3. **Counter total matches the real slide count** in the markup, not `01`.
 4. **`justify-content:safe center`** is still on `.slide` (with the plain `center` fallback declared before it), and the two `@media (max-height: …)` blocks are present.
 
-If you can render the file, also load it at **1200×672** and confirm no slide overflows (`scrollHeight > clientHeight`) and that → advances past slide 1. Report the slide count and that the preview checks passed.
+If you can render the file, load it at **1200×672** and check two different things:
+
+- **Overflow** — no slide has `scrollHeight > clientHeight`.
+- **Chrome collision** — the fixed `.brand` (top-left), `.counter` (bottom-left) and `.nav` (bottom-right) float *above* the slide, so a slide can pass the overflow check and still have its first or last line sitting underneath them. Compare the bounding box of the slide's first and last visible content against those three. Measure the text, not the block: `.content` children are full-width, so a naive box-intersection test reports a collision on almost every slide.
+
+Report the slide count and that the preview checks passed.
 
 ## Output
 - A single self-contained `.html` file (inline CSS + JS, no external dependencies), delivered on the host's output surface — `output/` on artifact hosts, an attached file on Copilot Studio and similar.
