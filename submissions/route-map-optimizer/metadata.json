@@ -1,0 +1,21 @@
+{
+  "name": "Route Map Optimizer",
+  "description": "Generate and optimize a multi-stop route with OpenStreetMap — geocode addresses, find an efficient visit order, and return a markdown stop list with a route map PNG, plus optional interactive HTML, GeoJSON, or KML.",
+  "platforms": ["Copilot Studio"],
+  "tags": [
+    "maps",
+    "routing",
+    "openstreetmap",
+    "python",
+    "optimization",
+    "geojson",
+    "kml",
+    "html",
+    "logistics"
+  ],
+  "author": "Nazish Qasim",
+  "authorUrl": "https://github.com/nazishqassim",
+  "version": "1.0.0",
+  "createdAt": "2026-08-04",
+  "updatedAt": "2026-08-04"
+}
