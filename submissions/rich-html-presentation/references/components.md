@@ -1,6 +1,6 @@
 # Component Catalog
 
-Every component below is already styled in `template.html`. Build slides by composing these — do not invent new CSS unless a slide genuinely needs it. Keep the `<style>` and `<script>` blocks verbatim.
+Every component below is already styled in `template.html`. Build slides by composing these — do not invent new CSS unless a slide genuinely needs it. Keep the `<style>` block and all four `<script>` blocks verbatim, and keep the scripts split (see the note at the top of `template.html`).
 
 ## Slide shell
 ```html
@@ -92,7 +92,7 @@ CSS-only horizontal bars that grow from zero on slide entry — no libraries. Us
 - `.link` — monospace pill anchor (auto arrow prefix). Group several in `.recap` for a resources footer.
 
 ## Chrome (do not remove)
-`.bg-glow` (ambient), `.progress` (top bar), `.brand` (top-left label — edit its text), `.counter` (auto), `.nav` (‹ ›), `.theme-btn` (☀/☾). The slide count is computed from the number of `.slide` elements.
+`.bg-glow` (ambient), `.progress` (top bar), `.brand` (top-left label — edit its text), `.counter`, `.nav` (‹ ›), `.theme-btn` (☀/☾). The nav script computes the slide count from the number of `.slide` elements — but also **hardcode the real total into `<span id="tot">`**, so a deck whose script was blocked by a preview surface shows broken navigation rather than looking like a one-slide deck.
 
 ## Theme
 Dark by default; follows the OS `prefers-color-scheme` on load; toggled via the top-right button or `T`. Everything reads from CSS variables (`--bg --ink --muted --line --card --grad --blue --violet --pink`), so custom colors should reuse those variables (or the `cN` accent classes) to stay theme-correct. Avoid hard-coded light-on-dark hex in inline styles.
