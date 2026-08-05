@@ -13,13 +13,16 @@ GeoJSON / KML on request.
 
 ## Instructions
 
-1. **Intake.** Collect at least 2 stops. Prefer one of:
-   - `lat` + `lon` (best — no geocoding)
-   - Suburb/landmark `name` or `address` that matches `assets/place_lookup.json`
-   - Full address (live Nominatim only when online)
+1. **Intake.** Collect at least 2 stops. Resolution order per stop:
+   1. **Customer `lat` + `lon` always win** (also `latitude`/`longitude`/`lng`).
+      If both are provided, use them exactly — never overwrite with place lookup
+      or Nominatim, even when an `address` is also present.
+   2. Else suburb/landmark `name` or `address` matching `assets/place_lookup.json`
+   3. Else full address via live Nominatim (online/auto only)
 
    If fewer than 2 stops: **stop and ask**. Do not invent coordinates outside
    the bundled place lookup without telling the user they are approximate.
+   When the user supplies lat/lon, pass them through unchanged.
 
 2. **Sandbox / Copilot Studio default.** Set `"mode": "offline"` unless the
    user explicitly wants live road routing. Offline uses:

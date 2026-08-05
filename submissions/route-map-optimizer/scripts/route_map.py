@@ -161,13 +161,44 @@ def geocode_online(address: str, *, sleep: float = 1.1) -> tuple[float, float, s
     return float(hit["lat"]), float(hit["lon"]), str(hit.get("display_name") or address)
 
 
+def _customer_coords(raw: Mapping[str, Any]) -> Optional[tuple[float, float]]:
+    """Return customer-supplied (lat, lon) if present. Always takes precedence.
+
+    Accepts lat/lon, latitude/longitude, or lng. Ignores null/blank values so an
+    empty lat field does not block address/lookup fallback.
+    """
+    lat_raw = raw.get("lat", raw.get("latitude"))
+    lon_raw = raw.get("lon", raw.get("lng", raw.get("longitude")))
+    if lat_raw is None or lon_raw is None:
+        return None
+    if isinstance(lat_raw, str) and not lat_raw.strip():
+        return None
+    if isinstance(lon_raw, str) and not lon_raw.strip():
+        return None
+    try:
+        lat, lon = float(lat_raw), float(lon_raw)
+    except (TypeError, ValueError) as e:
+        raise ValueError(
+            f"Invalid lat/lon values: lat={lat_raw!r}, lon={lon_raw!r}"
+        ) from e
+    if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0):
+        raise ValueError(f"lat/lon out of range: lat={lat}, lon={lon}")
+    return lat, lon
+
+
 def resolve_stops(
     stops: Sequence[Mapping[str, Any]],
     *,
     mode: str = "auto",
     place_lookup_path: Optional[str] = None,
 ) -> tuple[list[dict[str, Any]], list[str]]:
-    """Normalise stops to lat/lon. Returns (resolved, warnings)."""
+    """Normalise stops to lat/lon. Returns (resolved, warnings).
+
+    Precedence per stop (never overridden once set):
+    1. Customer ``lat``/``lon`` (or latitude/longitude/lng)
+    2. Bundled place lookup on name/address
+    3. Live Nominatim (auto/online only)
+    """
     if len(stops) < 2:
         raise ValueError("Need at least 2 stops to plan a route.")
     places = load_place_lookup(place_lookup_path)
@@ -177,16 +208,18 @@ def resolve_stops(
 
     for i, raw in enumerate(stops):
         name = str(raw.get("name") or f"Stop {i + 1}")
-        source = "coords"
-        lat = lon = None
         display = str(raw.get("address") or raw.get("display_name") or name)
 
-        if "lat" in raw and "lon" in raw:
-            lat, lon = float(raw["lat"]), float(raw["lon"])
+        # 1) Customer coordinates always win — even if address/name is also set.
+        coords = _customer_coords(raw)
+        if coords is not None:
+            lat, lon = coords
             source = "coords"
+            # Keep address as label only; do not geocode or lookup over the pin.
+            if not display or display == name:
+                display = f"{lat:.5f}, {lon:.5f}"
         else:
             query = str(raw.get("address") or name)
-            # 1) Bundled lookup (works offline — prefer in sandbox)
             hit = lookup_place(query, places) or lookup_place(name, places)
             if hit:
                 lat, lon, display = hit
@@ -213,7 +246,6 @@ def resolve_stops(
                     "or a known place name from assets/place_lookup.json."
                 )
 
-        assert lat is not None and lon is not None
         resolved.append(
             {
                 "name": name,

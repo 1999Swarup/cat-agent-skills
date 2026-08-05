@@ -26,7 +26,8 @@ print(result["markdown"])
 
 ### Resolving locations (offline-friendly)
 
-1. `lat` + `lon` if provided  
+1. **Customer `lat` + `lon` always win** (aliases: `latitude`/`longitude`/`lng`).
+   Never overwritten by address lookup or Nominatim.  
 2. Else match `name` / `address` against `assets/place_lookup.json`  
 3. Else (auto/online) call Nominatim  
 
