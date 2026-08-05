@@ -192,7 +192,9 @@
       "properties": {
         "name": "Opera House",
         "sequence": 1,
-        "address": "-33.85680, 151.21530"
+        "address": "-33.85680, 151.21530",
+        "value": null,
+        "icon": "pin"
       }
     },
     {
@@ -207,7 +209,9 @@
       "properties": {
         "name": "Harbour Bridge",
         "sequence": 2,
-        "address": "-33.85230, 151.21080"
+        "address": "-33.85230, 151.21080",
+        "value": null,
+        "icon": "pin"
       }
     },
     {
@@ -222,7 +226,9 @@
       "properties": {
         "name": "Darling Harbour",
         "sequence": 3,
-        "address": "-33.87490, 151.20090"
+        "address": "-33.87490, 151.20090",
+        "value": null,
+        "icon": "pin"
       }
     },
     {
@@ -237,7 +243,9 @@
       "properties": {
         "name": "Central Station",
         "sequence": 4,
-        "address": "-33.88320, 151.20700"
+        "address": "-33.88320, 151.20700",
+        "value": null,
+        "icon": "pin"
       }
     },
     {
@@ -252,7 +260,9 @@
       "properties": {
         "name": "Surry Hills",
         "sequence": 5,
-        "address": "-33.88610, 151.21100"
+        "address": "-33.88610, 151.21100",
+        "value": null,
+        "icon": "pin"
       }
     }
   ]

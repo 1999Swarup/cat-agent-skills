@@ -1,0 +1,90 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          151.2093,
+          -33.8688
+        ]
+      },
+      "properties": {
+        "name": "Sydney CBD",
+        "sequence": 1,
+        "address": "Sydney CBD",
+        "value": "24 C",
+        "icon": "sunny"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          151.2767,
+          -33.8915
+        ]
+      },
+      "properties": {
+        "name": "Bondi",
+        "sequence": 2,
+        "address": "Bondi Beach",
+        "value": "23 C",
+        "icon": "partly-cloudy"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          151.287,
+          -33.7969
+        ]
+      },
+      "properties": {
+        "name": "Manly",
+        "sequence": 3,
+        "address": "Manly",
+        "value": "21 C",
+        "icon": "cloudy"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          151.0011,
+          -33.8151
+        ]
+      },
+      "properties": {
+        "name": "Parramatta",
+        "sequence": 4,
+        "address": "Parramatta",
+        "value": "26 C",
+        "icon": "hot"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          151.1753,
+          -33.9399
+        ]
+      },
+      "properties": {
+        "name": "Airport",
+        "sequence": 5,
+        "address": "Sydney Airport",
+        "value": "22 C · showers",
+        "icon": "rain"
+      }
+    }
+  ]
+}
