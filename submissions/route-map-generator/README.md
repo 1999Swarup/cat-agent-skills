@@ -6,7 +6,7 @@ A generic **map + route** skill for Copilot Studio.
 - **Routes** — optimise multi-stop visit order and draw a path  
 
 Works **offline** in restricted sandboxes (place lookup + haversine) and can use
-live OpenStreetMap / OSRM when the network is available.
+live OpenStreetMap / OSRM for generating HTML.
 
 ## What you get
 
