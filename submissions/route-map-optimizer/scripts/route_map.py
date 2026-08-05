@@ -5,8 +5,9 @@ Default mode is ``auto``: use lat/lon or bundled place lookup first, try live
 Nominatim/OSRM when possible, and fall back to haversine distances + straight
 segments when SSL/network is blocked (typical Copilot Studio sandbox).
 
-Always produces PNG + markdown. Optional HTML is self-contained (SVG, numbered
-markers, no CDN/tiles) so it opens offline. Optional GeoJSON / KML exports.
+Always produces PNG + markdown. Optional HTML uses Leaflet + OpenStreetMap
+tiles with numbered markers, route line, legend, and clickable stop list.
+Optional GeoJSON / KML exports.
 
 Usage::
 
@@ -599,7 +600,7 @@ def save_png(
     return out
 
 
-# ── Interactive HTML (self-contained SVG — works offline / sandboxed) ────────
+# ── Interactive HTML (Leaflet + OpenStreetMap) ───────────────────────────────
 
 def save_html(
     ordered: Sequence[Mapping[str, Any]],
@@ -613,7 +614,7 @@ def save_html(
     profile: str,
     routing_source: str = "osrm",
 ) -> str:
-    """Self-contained HTML with numbered SVG markers. No CDN or map tiles."""
+    """Leaflet + OSM interactive map with numbered markers, route, and legend."""
     stops_js = json.dumps(
         [
             {
@@ -631,11 +632,13 @@ def save_html(
     title_esc = (
         title.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
     )
-    subtitle = f"{_fmt_km(distance_m)} | {_fmt_duration(duration_s)} | {profile}"
-    if round_trip:
-        subtitle += " | round trip"
-    if routing_source != "osrm":
-        subtitle += " | offline estimate"
+    dist_label = _fmt_km(distance_m)
+    time_label = _fmt_duration(duration_s)
+    method_label = (
+        "OSRM road route"
+        if routing_source == "osrm"
+        else "Approximate path (offline estimate)"
+    )
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -643,198 +646,301 @@ def save_html(
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>{title_esc}</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <style>
   :root {{
-    --bg: #f5f7fa; --card: #fff; --text: #201f1e; --muted: #605e5c;
-    --accent: #0078d4; --border: #e1dfdd; --start: #107c10; --end: #d83b01;
+    --bg: #eef2f6; --card: #ffffff; --text: #1b1a19; --muted: #605e5c;
+    --accent: #0078d4; --border: #d8d6d4; --start: #107c10; --end: #d83b01;
+    --route: #0f6cbd; --shadow: 0 8px 28px rgba(15, 23, 42, 0.10);
   }}
   * {{ box-sizing: border-box; }}
   body {{
-    margin: 0; font-family: "Segoe UI", system-ui, sans-serif;
-    background: var(--bg); color: var(--text);
+    margin: 0; min-height: 100vh;
+    font-family: "Segoe UI", system-ui, sans-serif;
+    color: var(--text);
+    background:
+      radial-gradient(1200px 500px at 10% -10%, #d6e8f8 0%, transparent 55%),
+      radial-gradient(900px 400px at 100% 0%, #e7f2ea 0%, transparent 50%),
+      var(--bg);
   }}
-  header {{ padding: 16px 20px 8px; max-width: 1100px; margin: 0 auto; }}
-  h1 {{ margin: 0 0 4px; font-size: 1.35rem; }}
-  .sub {{ color: var(--muted); font-size: 0.9rem; margin-bottom: 12px; }}
+  .shell {{ max-width: 1180px; margin: 0 auto; padding: 18px 16px 28px; }}
+  header {{
+    display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: flex-end;
+    justify-content: space-between; margin-bottom: 14px;
+  }}
+  h1 {{ margin: 0 0 4px; font-size: 1.45rem; letter-spacing: -0.02em; }}
+  .sub {{ color: var(--muted); font-size: 0.92rem; }}
+  .chips {{ display: flex; flex-wrap: wrap; gap: 8px; }}
+  .chip {{
+    background: var(--card); border: 1px solid var(--border); border-radius: 999px;
+    padding: 6px 12px; font-size: 0.82rem; color: var(--muted);
+    box-shadow: 0 1px 2px rgba(0,0,0,.04);
+  }}
+  .chip strong {{ color: var(--text); font-weight: 600; }}
   .layout {{
-    display: grid; grid-template-columns: 300px 1fr; gap: 12px;
-    max-width: 1100px; margin: 0 auto; padding: 0 16px 20px;
+    display: grid; grid-template-columns: 320px 1fr; gap: 14px;
   }}
-  @media (max-width: 800px) {{ .layout {{ grid-template-columns: 1fr; }} }}
-  .panel {{
-    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
-    padding: 12px 14px; max-height: 70vh; overflow: auto;
+  @media (max-width: 860px) {{ .layout {{ grid-template-columns: 1fr; }} }}
+  .panel, .map-card {{
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; box-shadow: var(--shadow);
   }}
+  .panel {{ padding: 14px 14px 10px; max-height: 72vh; overflow: auto; }}
   .panel h2 {{ margin: 0 0 10px; font-size: 0.95rem; }}
+  .hint {{ color: var(--muted); font-size: 0.78rem; margin: -4px 0 12px; }}
   ol.stops {{ margin: 0; padding: 0; list-style: none; }}
   ol.stops li {{
-    display: grid; grid-template-columns: 28px 1fr; gap: 8px;
-    margin: 0 0 10px; font-size: 0.88rem; line-height: 1.35; align-items: start;
+    display: grid; grid-template-columns: 30px 1fr; gap: 10px;
+    padding: 9px 8px; margin: 0 0 4px; border-radius: 10px;
+    cursor: pointer; transition: background .15s ease;
   }}
+  ol.stops li:hover, ol.stops li.active {{ background: #f3f8fd; }}
   .badge {{
-    width: 26px; height: 26px; border-radius: 50%; background: var(--accent);
-    color: #fff; font: bold 12px/26px "Segoe UI", sans-serif; text-align: center;
+    width: 28px; height: 28px; border-radius: 50%; background: var(--accent);
+    color: #fff; font: 700 12px/28px "Segoe UI", sans-serif; text-align: center;
+    box-shadow: 0 2px 6px rgba(0,120,212,.35);
   }}
-  .badge.start {{ background: var(--start); }}
-  .badge.end {{ background: var(--end); }}
-  ol.stops .meta {{ color: var(--muted); font-size: 0.78rem; }}
-  .map-wrap {{
-    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
-    padding: 8px; min-height: 420px;
+  .badge.start {{ background: var(--start); box-shadow: 0 2px 6px rgba(16,124,16,.35); }}
+  .badge.end {{ background: var(--end); box-shadow: 0 2px 6px rgba(216,59,1,.35); }}
+  .badge.ret {{ background: #8764b8; box-shadow: 0 2px 6px rgba(135,100,184,.35); }}
+  ol.stops .meta {{ color: var(--muted); font-size: 0.76rem; margin-top: 2px; }}
+  .map-card {{ position: relative; overflow: hidden; min-height: 520px; }}
+  #map {{ height: 72vh; min-height: 520px; width: 100%; }}
+  .legend {{
+    position: absolute; z-index: 1000; right: 12px; bottom: 28px;
+    background: rgba(255,255,255,.96); border: 1px solid var(--border);
+    border-radius: 12px; padding: 10px 12px; box-shadow: var(--shadow);
+    font-size: 0.78rem; line-height: 1.45; min-width: 160px;
   }}
-  .toolbar {{ display: flex; gap: 8px; margin-bottom: 8px; }}
+  .legend h3 {{ margin: 0 0 6px; font-size: 0.8rem; }}
+  .legend-row {{ display: flex; align-items: center; gap: 8px; margin: 4px 0; }}
+  .swatch {{
+    width: 14px; height: 14px; border-radius: 50%; border: 2px solid #fff;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.12);
+  }}
+  .swatch.line {{
+    width: 22px; height: 4px; border-radius: 2px; border: none; box-shadow: none;
+  }}
+  .toolbar {{
+    position: absolute; z-index: 1000; top: 12px; left: 52px;
+    display: flex; gap: 6px; flex-wrap: wrap;
+  }}
   .toolbar button {{
-    border: 1px solid var(--border); background: #fff; border-radius: 6px;
-    padding: 6px 10px; cursor: pointer; font-size: 0.85rem;
+    border: 1px solid var(--border); background: rgba(255,255,255,.96);
+    border-radius: 8px; padding: 7px 11px; cursor: pointer; font-size: 0.8rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,.08);
   }}
   .toolbar button:hover {{ border-color: var(--accent); color: var(--accent); }}
-  #mapSvg {{ width: 100%; height: 64vh; min-height: 400px; background: #eef3f8; border-radius: 8px; }}
   .foot {{
-    max-width: 1100px; margin: 0 auto; padding: 0 16px 24px;
-    font-size: 0.75rem; color: var(--muted);
+    margin-top: 12px; font-size: 0.75rem; color: var(--muted);
   }}
-  .tip {{ fill: #201f1e; font: 600 11px "Segoe UI", sans-serif; }}
+  .foot a {{ color: var(--accent); }}
+  .marker-pin {{
+    width: 30px; height: 30px; border-radius: 50%;
+    color: #fff; font: 700 13px/30px "Segoe UI", sans-serif; text-align: center;
+    border: 3px solid #fff; box-shadow: 0 3px 10px rgba(0,0,0,.28);
+  }}
+  .leaflet-popup-content {{ margin: 10px 12px; font-size: 0.88rem; }}
+  .popup-n {{
+    display: inline-block; min-width: 22px; height: 22px; border-radius: 50%;
+    background: var(--accent); color: #fff; font: 700 11px/22px "Segoe UI", sans-serif;
+    text-align: center; margin-right: 6px;
+  }}
 </style>
 </head>
 <body>
-<header>
-  <h1>{title_esc}</h1>
-  <div class="sub">{subtitle}</div>
-</header>
-<div class="layout">
-  <aside class="panel">
-    <h2>Stop sequence</h2>
-    <ol class="stops" id="stopList"></ol>
-  </aside>
-  <div class="map-wrap">
-    <div class="toolbar">
-      <button type="button" id="btnZoomIn" title="Zoom in">Zoom +</button>
-      <button type="button" id="btnZoomOut" title="Zoom out">Zoom -</button>
-      <button type="button" id="btnReset" title="Reset view">Reset</button>
+<div class="shell">
+  <header>
+    <div>
+      <h1>{title_esc}</h1>
+      <div class="sub">{method_label} on OpenStreetMap</div>
     </div>
-    <svg id="mapSvg" viewBox="0 0 800 560" xmlns="http://www.w3.org/2000/svg"></svg>
+    <div class="chips">
+      <div class="chip"><strong>{dist_label}</strong> distance</div>
+      <div class="chip"><strong>{time_label}</strong> est. time</div>
+      <div class="chip"><strong>{profile}</strong> profile</div>
+      <div class="chip"><strong>{"Round trip" if round_trip else "One way"}</strong></div>
+      <div class="chip"><strong>{len(ordered)}</strong> stops</div>
+    </div>
+  </header>
+  <div class="layout">
+    <aside class="panel">
+      <h2>Visit order</h2>
+      <p class="hint">Click a stop to fly to it on the map.</p>
+      <ol class="stops" id="stopList"></ol>
+    </aside>
+    <div class="map-card">
+      <div class="toolbar">
+        <button type="button" id="btnFit">Fit route</button>
+        <button type="button" id="btnToggleRoute">Toggle route</button>
+        <button type="button" id="btnToggleLabels">Toggle labels</button>
+      </div>
+      <div id="map"></div>
+      <div class="legend" id="legend">
+        <h3>Legend</h3>
+        <div class="legend-row"><span class="swatch" style="background:#107c10"></span> Start (1)</div>
+        <div class="legend-row"><span class="swatch" style="background:#0078d4"></span> Stop (2…n)</div>
+        <div class="legend-row"><span class="swatch" style="background:#d83b01"></span> Final stop</div>
+        <div class="legend-row"><span class="swatch line" style="background:#0f6cbd"></span> Route path</div>
+      </div>
+    </div>
   </div>
+  <p class="foot">
+    Map data &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors
+    · Interactive map via <a href="https://leafletjs.com/" target="_blank" rel="noopener">Leaflet</a>
+    · Numbered markers show visit sequence
+  </p>
 </div>
-<p class="foot" id="footNote"></p>
 <script>
 const STOPS = {stops_js};
 const GEOM = {geom_js};
 const ROUND = {str(round_trip).lower()};
 const SOURCE = {json.dumps(routing_source)};
-
-const list = document.getElementById('stopList');
-STOPS.forEach((s, i) => {{
-  const li = document.createElement('li');
-  const cls = i === 0 ? 'badge start' : (i === STOPS.length - 1 && !ROUND ? 'badge end' : 'badge');
-  li.innerHTML = `<span class="${{cls}}">${{s.n}}</span>
-    <div><strong>${{s.n}}. ${{s.name}}</strong>
-    <div class="meta">${{s.display || (s.lat.toFixed(5)+', '+s.lon.toFixed(5))}}</div></div>`;
-  list.appendChild(li);
-}});
-if (ROUND && STOPS.length) {{
-  const li = document.createElement('li');
-  li.innerHTML = `<span class="badge start">↩</span><div><em>Return to 1. ${{STOPS[0].name}}</em></div>`;
-  list.appendChild(li);
-}}
-document.getElementById('footNote').textContent = SOURCE === 'osrm'
-  ? '(c) OpenStreetMap contributors | Routing via OSRM | Numbered markers show visit order'
-  : 'Offline SVG map (no external tiles) | Approximate path | Numbered markers show visit order';
-
-const svg = document.getElementById('mapSvg');
-const W = 800, H = 560, PAD = 48;
-let scale = 1, ox = 0, oy = 0;
-
-function bounds() {{
-  const pts = (GEOM.coordinates || []).map(c => [c[0], c[1]]);
-  STOPS.forEach(s => pts.push([s.lon, s.lat]));
-  if (!pts.length) return {{ minLon: 0, maxLon: 1, minLat: 0, maxLat: 1 }};
-  let minLon = Infinity, maxLon = -Infinity, minLat = Infinity, maxLat = -Infinity;
-  pts.forEach(([lon, lat]) => {{
-    if (lon < minLon) minLon = lon; if (lon > maxLon) maxLon = lon;
-    if (lat < minLat) minLat = lat; if (lat > maxLat) maxLat = lat;
-  }});
-  if (minLon === maxLon) {{ minLon -= 0.01; maxLon += 0.01; }}
-  if (minLat === maxLat) {{ minLat -= 0.01; maxLat += 0.01; }}
-  return {{ minLon, maxLon, minLat, maxLat }};
-}}
-
-function project(lon, lat, b) {{
-  const x = PAD + (lon - b.minLon) / (b.maxLon - b.minLon) * (W - 2 * PAD);
-  const y = PAD + (1 - (lat - b.minLat) / (b.maxLat - b.minLat)) * (H - 2 * PAD);
-  return [x, y];
-}}
+const markers = [];
+let routeLayer = null;
+let labelsOn = true;
 
 function colour(i) {{
   if (i === 0) return '#107c10';
   if (i === STOPS.length - 1 && !ROUND) return '#d83b01';
+  if (i === STOPS.length - 1 && ROUND) return '#0078d4';
   return '#0078d4';
 }}
 
-function render() {{
-  const b = bounds();
-  svg.innerHTML = '';
-  const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-  g.setAttribute('transform', `translate(${{ox}},${{oy}}) scale(${{scale}})`);
-
-  // grid
-  for (let i = 0; i <= 8; i++) {{
-    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    const x = PAD + i * (W - 2 * PAD) / 8;
-    line.setAttribute('x1', x); line.setAttribute('x2', x);
-    line.setAttribute('y1', PAD); line.setAttribute('y2', H - PAD);
-    line.setAttribute('stroke', '#dbe4ee'); line.setAttribute('stroke-width', '1');
-    g.appendChild(line);
-  }}
-
-  const coords = GEOM.coordinates || [];
-  if (coords.length > 1) {{
-    const path = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
-    path.setAttribute('points', coords.map(c => project(c[0], c[1], b).join(',')).join(' '));
-    path.setAttribute('fill', 'none');
-    path.setAttribute('stroke', '#0078d4');
-    path.setAttribute('stroke-width', '4');
-    path.setAttribute('stroke-linecap', 'round');
-    path.setAttribute('stroke-linejoin', 'round');
-    path.setAttribute('opacity', '0.9');
-    g.appendChild(path);
-  }}
-
-  STOPS.forEach((s, i) => {{
-    const [x, y] = project(s.lon, s.lat, b);
-    const c = colour(i);
-    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-    circle.setAttribute('cx', x); circle.setAttribute('cy', y);
-    circle.setAttribute('r', 14);
-    circle.setAttribute('fill', c);
-    circle.setAttribute('stroke', '#fff');
-    circle.setAttribute('stroke-width', '3');
-    g.appendChild(circle);
-
-    const num = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    num.setAttribute('x', x); num.setAttribute('y', y + 1);
-    num.setAttribute('text-anchor', 'middle');
-    num.setAttribute('dominant-baseline', 'middle');
-    num.setAttribute('fill', '#fff');
-    num.setAttribute('font-size', '13');
-    num.setAttribute('font-weight', '700');
-    num.setAttribute('font-family', 'Segoe UI, system-ui, sans-serif');
-    num.textContent = String(s.n);
-    g.appendChild(num);
-
-    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    label.setAttribute('x', x + 18); label.setAttribute('y', y - 10);
-    label.setAttribute('class', 'tip');
-    label.textContent = s.n + '. ' + s.name;
-    g.appendChild(label);
-  }});
-
-  svg.appendChild(g);
+function badgeClass(i) {{
+  if (i === 0) return 'badge start';
+  if (i === STOPS.length - 1 && !ROUND) return 'badge end';
+  return 'badge';
 }}
 
-document.getElementById('btnZoomIn').onclick = () => {{ scale = Math.min(3, scale * 1.2); render(); }};
-document.getElementById('btnZoomOut').onclick = () => {{ scale = Math.max(0.5, scale / 1.2); render(); }};
-document.getElementById('btnReset').onclick = () => {{ scale = 1; ox = 0; oy = 0; render(); }};
-render();
+function numberedIcon(n, fill) {{
+  return L.divIcon({{
+    className: '',
+    html: `<div class="marker-pin" style="background:${{fill}}">${{n}}</div>`,
+    iconSize: [30, 30],
+    iconAnchor: [15, 15],
+    popupAnchor: [0, -16]
+  }});
+}}
+
+const list = document.getElementById('stopList');
+STOPS.forEach((s, i) => {{
+  const li = document.createElement('li');
+  li.dataset.idx = String(i);
+  li.innerHTML = `<span class="${{badgeClass(i)}}">${{s.n}}</span>
+    <div><strong>${{s.n}}. ${{s.name}}</strong>
+    <div class="meta">${{s.display || (s.lat.toFixed(5) + ', ' + s.lon.toFixed(5))}}</div></div>`;
+  li.addEventListener('click', () => focusStop(i));
+  list.appendChild(li);
+}});
+if (ROUND && STOPS.length) {{
+  const li = document.createElement('li');
+  li.innerHTML = `<span class="badge ret">↩</span>
+    <div><strong>Return to start</strong>
+    <div class="meta">Back to 1. ${{STOPS[0].name}}</div></div>`;
+  li.addEventListener('click', () => focusStop(0));
+  list.appendChild(li);
+  // Update legend note for round trip
+  const leg = document.getElementById('legend');
+  const row = document.createElement('div');
+  row.className = 'legend-row';
+  row.innerHTML = '<span class="swatch" style="background:#8764b8"></span> Return to start';
+  leg.appendChild(row);
+}}
+
+const map = L.map('map', {{ zoomControl: true, scrollWheelZoom: true }});
+L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
+  maxZoom: 19,
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+}}).addTo(map);
+
+const latlngs = (GEOM.coordinates || []).map(c => [c[1], c[0]]);
+if (latlngs.length > 1) {{
+  routeLayer = L.polyline(latlngs, {{
+    color: '#0f6cbd',
+    weight: SOURCE === 'osrm' ? 6 : 5,
+    opacity: 0.9,
+    dashArray: SOURCE === 'osrm' ? null : '10 8',
+    lineJoin: 'round',
+    lineCap: 'round'
+  }}).addTo(map);
+  routeLayer.bindPopup(SOURCE === 'osrm'
+    ? '<strong>Road route</strong><br/>OSRM / OpenStreetMap'
+    : '<strong>Approximate path</strong><br/>Offline estimate (not turn-by-turn)');
+}}
+
+const group = L.featureGroup();
+STOPS.forEach((s, i) => {{
+  const fill = colour(i);
+  const m = L.marker([s.lat, s.lon], {{
+    icon: numberedIcon(s.n, fill),
+    title: s.n + '. ' + s.name,
+    riseOnHover: true
+  }});
+  m.bindPopup(
+    `<span class="popup-n" style="background:${{fill}}">${{s.n}}</span>` +
+    `<strong>${{s.name}}</strong><br/>` +
+    `<span style="color:#605e5c">${{s.display || (s.lat.toFixed(5) + ', ' + s.lon.toFixed(5))}}</span>`
+  );
+  if (labelsOn) {{
+    m.bindTooltip(s.n + '. ' + s.name, {{
+      permanent: false, direction: 'top', offset: [0, -12]
+    }});
+  }}
+  m.on('click', () => highlightList(i));
+  m.addTo(map);
+  group.addLayer(m);
+  markers.push(m);
+}});
+
+function fitAll() {{
+  const layers = [];
+  if (routeLayer) layers.push(routeLayer);
+  markers.forEach(m => layers.push(m));
+  if (layers.length) {{
+    const g = L.featureGroup(layers);
+    map.fitBounds(g.getBounds().pad(0.18));
+  }} else {{
+    map.setView([-33.87, 151.21], 11);
+  }}
+}}
+
+function highlightList(i) {{
+  document.querySelectorAll('#stopList li').forEach(el => el.classList.remove('active'));
+  const el = document.querySelector('#stopList li[data-idx="' + i + '"]');
+  if (el) el.classList.add('active');
+}}
+
+function focusStop(i) {{
+  const m = markers[i];
+  if (!m) return;
+  highlightList(i);
+  map.flyTo(m.getLatLng(), Math.max(map.getZoom(), 14), {{ duration: 0.7 }});
+  m.openPopup();
+}}
+
+document.getElementById('btnFit').onclick = fitAll;
+document.getElementById('btnToggleRoute').onclick = () => {{
+  if (!routeLayer) return;
+  if (map.hasLayer(routeLayer)) map.removeLayer(routeLayer);
+  else routeLayer.addTo(map);
+}};
+document.getElementById('btnToggleLabels').onclick = () => {{
+  labelsOn = !labelsOn;
+  markers.forEach((m, i) => {{
+    m.unbindTooltip();
+    if (labelsOn) {{
+      m.bindTooltip(STOPS[i].n + '. ' + STOPS[i].name, {{
+        permanent: false, direction: 'top', offset: [0, -12]
+      }});
+    }}
+  }});
+}};
+
+fitAll();
 </script>
 </body>
 </html>

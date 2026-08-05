@@ -8,8 +8,8 @@ Works **offline in restricted sandboxes** (no live OSM/OSRM required) and can
 use live Nominatim + OSRM when the network allows.
 
 Always return a markdown stop table **inline with a PNG map**. Optional
-self-contained HTML shows **numbered route markers** (no CDN/tiles). Optional
-GeoJSON / KML on request.
+Optional HTML uses **Leaflet + OpenStreetMap** with numbered markers, route
+line, legend, and a clickable stop list. Optional GeoJSON / KML on request.
 
 ## Instructions
 

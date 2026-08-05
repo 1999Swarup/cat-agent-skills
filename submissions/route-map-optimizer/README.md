@@ -28,8 +28,9 @@ Planning “which stop next?” by eye is slow. This skill:
 | `auto` | Try OSRM; on SSL/network failure, fall back offline automatically. |
 | `online` | Require live OSRM (fails clearly if blocked). |
 
-HTML is **self-contained SVG** — no Leaflet CDN and no map tiles — so it opens
-even when outbound HTTPS is blocked. Markers show visit order **1, 2, 3…**.
+HTML uses **Leaflet + OpenStreetMap** tiles: pan/zoom, numbered markers,
+route polyline, legend, and a clickable stop list that flies to each pin.
+Needs a browser with network access for tiles (usual when sharing the file).
 
 ## Real use cases
 
@@ -49,7 +50,7 @@ even when outbound HTTPS is blocked. Markers show visit order **1, 2, 3…**.
 1. **Markdown** — distance, time, numbered table, map image  
 2. **PNG** — route path + numbered markers  
 3. **CSV** — ordered stops  
-4. Optional **HTML** — zoomable SVG map, numbered badges matching the table  
+4. Optional **HTML** — Leaflet/OSM interactive map with numbered markers + legend  
 5. Optional **GeoJSON** / **KML**  
 
 ## Dependencies

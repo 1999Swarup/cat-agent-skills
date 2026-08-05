@@ -20,7 +20,7 @@ print(result["markdown"])
 | `round_trip` | no | default `true` |
 | `start` | no | index or stop name |
 | `title` | no | map / HTML title |
-| `html` | no | self-contained SVG with **numbered markers** |
+| `html` | no | Leaflet + OSM map with **numbered markers**, legend, clickable stops |
 | `geojson` / `kml` | no | GIS exports |
 | `out_prefix` | no | default `route` |
 
