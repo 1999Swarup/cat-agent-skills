@@ -1,6 +1,6 @@
 {
   "name": "Route Map Generator",
-  "description": "Plot locations or optimise multi-stop routes on OpenStreetMap — pass places, coordinates, values, and icons (including weather), get a PNG + markdown table, and optional Leaflet HTML, GeoJSON, or KML. Works offline in sandboxes.",
+  "description": "Plot locations or optimise multi-stop routes on OpenStreetMap — pass places, coordinates, values, and icons supported, get a PNG + markdown table, and optional Leaflet HTML, GeoJSON, or KML. Works offline in sandboxes.",
   "platforms": ["Copilot Studio"],
   "tags": [
     "maps",
