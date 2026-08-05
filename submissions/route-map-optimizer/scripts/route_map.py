@@ -1,35 +1,35 @@
 #!/usr/bin/env python3
-"""Optimize a multi-stop route with OpenStreetMap (Nominatim + OSRM).
+"""Optimize a multi-stop route — online (OSM/OSRM) or offline (sandbox-safe).
 
-Geocodes addresses, builds a driving/walking/cycling distance matrix,
-optimises visit order (nearest-neighbour + 2-opt), draws a PNG map,
-and optionally writes interactive HTML, GeoJSON, and KML.
+Default mode is ``auto``: use lat/lon or bundled place lookup first, try live
+Nominatim/OSRM when possible, and fall back to haversine distances + straight
+segments when SSL/network is blocked (typical Copilot Studio sandbox).
 
-Usage (import)::
+Always produces PNG + markdown. Optional HTML is self-contained (SVG, numbered
+markers, no CDN/tiles) so it opens offline. Optional GeoJSON / KML exports.
+
+Usage::
 
     from route_map import plan_route
     result = plan_route({
         "stops": [
-            {"name": "Office", "address": "1 Macquarie St, Sydney NSW"},
-            {"name": "Client A", "address": "Circular Quay, Sydney"},
-            {"name": "Client B", "lat": -33.8915, "lon": 151.2767},
+            {"name": "Bondi", "address": "Bondi Beach"},
+            {"name": "Manly", "address": "Manly"},
+            {"name": "CBD", "lat": -33.8688, "lon": 151.2093},
         ],
+        "mode": "offline",   # recommended in restricted sandboxes
         "round_trip": True,
         "html": True,
-        "geojson": True,
-        "kml": True,
     })
-
-CLI::
-
-    python route_map.py --payload assets/sample_stops.json --html --geojson --kml
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
+import ssl
 import sys
 import time
 import urllib.error
@@ -53,36 +53,106 @@ USER_AGENT = "cat-agent-skills-route-map-optimizer/1.0 (github.com/microsoft/cat
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 OSRM_BASE = "https://router.project-osrm.org"
 PROFILES = ("driving", "walking", "cycling")
+MODES = ("auto", "online", "offline")
+
+# Approximate urban speeds (m/s) and road-factor vs straight-line distance.
+_SPEED_MPS = {"driving": 35_000 / 3600, "walking": 5_000 / 3600, "cycling": 15_000 / 3600}
+_ROAD_FACTOR = {"driving": 1.35, "walking": 1.15, "cycling": 1.25}
+
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_DEFAULT_LOOKUP = os.path.normpath(
+    os.path.join(_SCRIPT_DIR, "..", "assets", "place_lookup.json")
+)
 
 
-# ── HTTP helpers ─────────────────────────────────────────────────────────────
+# ── HTTP helpers (SSL-tolerant) ──────────────────────────────────────────────
 
-def _http_get(url: str, params: Optional[dict[str, Any]] = None, timeout: int = 30) -> Any:
+def _ssl_contexts() -> list[ssl.SSLContext]:
+    """Try system certs first, then unverified (some sandboxes strip CA store)."""
+    contexts: list[ssl.SSLContext] = []
+    try:
+        contexts.append(ssl.create_default_context())
+    except Exception:
+        pass
+    unverified = ssl._create_unverified_context()  # noqa: SLF001
+    contexts.append(unverified)
+    return contexts
+
+
+def _http_get(url: str, params: Optional[dict[str, Any]] = None, timeout: int = 20) -> Any:
     if params:
         url = f"{url}?{urllib.parse.urlencode(params)}"
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", errors="replace")[:300]
-        raise RuntimeError(f"HTTP {e.code} from {url.split('?')[0]}: {body}") from e
-    except urllib.error.URLError as e:
-        raise RuntimeError(f"Network error calling {url.split('?')[0]}: {e.reason}") from e
+    req = urllib.request.Request(
+        url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"}
+    )
+    last_err: Optional[BaseException] = None
+    for ctx in _ssl_contexts():
+        try:
+            with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except Exception as e:  # SSL, timeout, HTTP — try next context / raise
+            last_err = e
+            # Only retry on SSL-ish failures; HTTP 4xx/5xx won't improve
+            if isinstance(e, urllib.error.HTTPError):
+                body = e.read().decode("utf-8", errors="replace")[:300]
+                raise RuntimeError(f"HTTP {e.code} from {url.split('?')[0]}: {body}") from e
+            continue
+    raise RuntimeError(
+        f"Network/SSL error calling {url.split('?')[0]}: {last_err}"
+    ) from last_err
 
 
-# ── Geocoding (Nominatim / OSM) ──────────────────────────────────────────────
+# ── Place lookup (offline geocoding) ─────────────────────────────────────────
 
-def geocode(address: str, *, sleep: float = 1.1) -> tuple[float, float, str]:
-    """Return (lat, lon, display_name). Respects Nominatim 1 req/s guidance."""
+def load_place_lookup(path: Optional[str] = None) -> dict[str, dict[str, Any]]:
+    lookup_path = path or _DEFAULT_LOOKUP
+    if not os.path.isfile(lookup_path):
+        return {}
+    with open(lookup_path, encoding="utf-8") as fh:
+        data = json.load(fh)
+    places = data.get("places") if isinstance(data, dict) else None
+    if not isinstance(places, dict):
+        return {}
+    return {str(k).lower(): v for k, v in places.items() if isinstance(v, dict)}
+
+
+def lookup_place(
+    text: str,
+    places: Mapping[str, Mapping[str, Any]],
+) -> Optional[tuple[float, float, str]]:
+    """Match name/address against bundled approximate centroids."""
+    if not text or not places:
+        return None
+    key = text.strip().lower()
+    # Strip common suffixes for matching
+    for noise in (", australia", ", nsw", " nsw", ", sydney", " sydney"):
+        key = key.replace(noise, "")
+    key = key.strip(" ,")
+
+    if key in places:
+        p = places[key]
+        return float(p["lat"]), float(p["lon"]), str(p.get("label") or text)
+
+    # Substring: longest alias wins
+    best: Optional[tuple[int, str]] = None
+    for alias in places:
+        if alias in key or key in alias:
+            score = len(alias)
+            if best is None or score > best[0]:
+                best = (score, alias)
+    if best:
+        p = places[best[1]]
+        return float(p["lat"]), float(p["lon"]), str(p.get("label") or text)
+    return None
+
+
+# ── Geocoding ────────────────────────────────────────────────────────────────
+
+def geocode_online(address: str, *, sleep: float = 1.1) -> tuple[float, float, str]:
+    """Nominatim live geocode. Raises on network/SSL/empty result."""
     data = _http_get(
         NOMINATIM_URL,
-        {
-            "q": address,
-            "format": "json",
-            "limit": 1,
-            "addressdetails": 0,
-        },
+        {"q": address, "format": "json", "limit": 1, "addressdetails": 0},
     )
     time.sleep(sleep)
     if not data:
@@ -91,22 +161,59 @@ def geocode(address: str, *, sleep: float = 1.1) -> tuple[float, float, str]:
     return float(hit["lat"]), float(hit["lon"]), str(hit.get("display_name") or address)
 
 
-def resolve_stops(stops: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """Normalise stops to name + lat/lon (+ address / display_name)."""
+def resolve_stops(
+    stops: Sequence[Mapping[str, Any]],
+    *,
+    mode: str = "auto",
+    place_lookup_path: Optional[str] = None,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Normalise stops to lat/lon. Returns (resolved, warnings)."""
     if len(stops) < 2:
         raise ValueError("Need at least 2 stops to plan a route.")
+    places = load_place_lookup(place_lookup_path)
+    warnings: list[str] = []
     resolved: list[dict[str, Any]] = []
+    allow_online = mode in ("auto", "online")
+
     for i, raw in enumerate(stops):
         name = str(raw.get("name") or f"Stop {i + 1}")
+        source = "coords"
+        lat = lon = None
+        display = str(raw.get("address") or raw.get("display_name") or name)
+
         if "lat" in raw and "lon" in raw:
             lat, lon = float(raw["lat"]), float(raw["lon"])
-            display = str(raw.get("address") or raw.get("display_name") or name)
-        elif raw.get("address"):
-            lat, lon, display = geocode(str(raw["address"]))
+            source = "coords"
         else:
-            raise ValueError(
-                f"Stop {i + 1} ({name!r}) needs `address` or both `lat` and `lon`."
-            )
+            query = str(raw.get("address") or name)
+            # 1) Bundled lookup (works offline — prefer in sandbox)
+            hit = lookup_place(query, places) or lookup_place(name, places)
+            if hit:
+                lat, lon, display = hit
+                source = "place_lookup"
+            elif allow_online:
+                try:
+                    lat, lon, display = geocode_online(query)
+                    source = "nominatim"
+                except Exception as e:
+                    if mode == "online":
+                        raise
+                    warnings.append(
+                        f"Live geocode failed for {name!r} ({e}); "
+                        "no offline match — provide lat/lon."
+                    )
+                    raise ValueError(
+                        f"Stop {i + 1} ({name!r}): cannot resolve location offline. "
+                        f"Add lat/lon, or a name present in assets/place_lookup.json. "
+                        f"Online error: {e}"
+                    ) from e
+            else:
+                raise ValueError(
+                    f"Stop {i + 1} ({name!r}): offline mode needs `lat`/`lon` "
+                    "or a known place name from assets/place_lookup.json."
+                )
+
+        assert lat is not None and lon is not None
         resolved.append(
             {
                 "name": name,
@@ -114,9 +221,10 @@ def resolve_stops(stops: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
                 "lon": lon,
                 "address": str(raw.get("address") or ""),
                 "display_name": display,
+                "coord_source": source,
             }
         )
-    return resolved
+    return resolved, warnings
 
 
 # ── OSRM matrix + route ──────────────────────────────────────────────────────
@@ -171,6 +279,71 @@ def osrm_route(
         "distance_m": float(route["distance"]),
         "duration_s": float(route["duration"]),
         "geometry": route["geometry"],  # GeoJSON LineString
+    }
+
+
+# ── Offline distance / geometry (sandbox-safe) ───────────────────────────────
+
+def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    r = 6_371_000.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlmb = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlmb / 2) ** 2
+    return 2 * r * math.asin(min(1.0, math.sqrt(a)))
+
+
+def offline_table(
+    stops: Sequence[Mapping[str, Any]],
+    profile: str = "driving",
+) -> tuple[list[list[float]], list[list[float]]]:
+    """Haversine distances with road factor + speed → (durations, distances)."""
+    n = len(stops)
+    factor = _ROAD_FACTOR.get(profile, 1.3)
+    speed = _SPEED_MPS.get(profile, _SPEED_MPS["driving"])
+    distances = [[0.0] * n for _ in range(n)]
+    durations = [[0.0] * n for _ in range(n)]
+    for i in range(n):
+        for j in range(n):
+            if i == j:
+                continue
+            d = haversine_m(stops[i]["lat"], stops[i]["lon"], stops[j]["lat"], stops[j]["lon"])
+            d *= factor
+            distances[i][j] = d
+            durations[i][j] = d / speed
+    return durations, distances
+
+
+def offline_route(
+    ordered: Sequence[Mapping[str, Any]],
+    profile: str = "driving",
+) -> dict[str, Any]:
+    """Straight-line segments between ordered stops (GeoJSON LineString)."""
+    if not ordered:
+        return {
+            "distance_m": 0.0,
+            "duration_s": 0.0,
+            "geometry": {"type": "LineString", "coordinates": []},
+        }
+    factor = _ROAD_FACTOR.get(profile, 1.3)
+    speed = _SPEED_MPS.get(profile, _SPEED_MPS["driving"])
+    coords: list[list[float]] = []
+    total = 0.0
+    for a, b in zip(ordered, ordered[1:]):
+        # densify segment for smoother PNG/SVG
+        steps = 8
+        for t in range(steps + 1):
+            if t == 0 and coords:
+                continue
+            u = t / steps
+            lat = a["lat"] + (b["lat"] - a["lat"]) * u
+            lon = a["lon"] + (b["lon"] - a["lon"]) * u
+            coords.append([lon, lat])
+        total += haversine_m(a["lat"], a["lon"], b["lat"], b["lon"]) * factor
+    return {
+        "distance_m": total,
+        "duration_s": total / speed,
+        "geometry": {"type": "LineString", "coordinates": coords},
     }
 
 
@@ -260,14 +433,25 @@ def markdown_route(
     round_trip: bool,
     profile: str,
     chart_path: str,
+    routing_source: str = "osrm",
 ) -> str:
     """Markdown the agent can paste inline with the map image."""
+    if routing_source == "osrm":
+        method = "OSRM road routing"
+        foot = "Map data (c) OpenStreetMap contributors | Routing via OSRM"
+    else:
+        method = "offline estimate (straight-line x road factor; not turn-by-turn)"
+        foot = (
+            "Offline mode: approximate centroids / coordinates | "
+            "haversine + road factor (not live OSM routing)"
+        )
     lines = [
         "### Optimised route",
         "",
         f"**Profile:** {profile} | **Distance:** {_fmt_km(distance_m)} | "
         f"**Est. time:** {_fmt_duration(duration_s)}"
-        + (" | **Round trip**" if round_trip else ""),
+        + (" | **Round trip**" if round_trip else "")
+        + f" | **Method:** {method}",
         "",
         "| # | Stop | Location |",
         "| ---: | --- | --- |",
@@ -283,7 +467,7 @@ def markdown_route(
         "",
         f"![Route map]({chart_path})",
         "",
-        "*Map data (c) OpenStreetMap contributors | Routing via OSRM*",
+        f"*{foot}*",
     ]
     return "\n".join(lines)
 
@@ -383,7 +567,7 @@ def save_png(
     return out
 
 
-# ── Interactive HTML (Leaflet + OSM tiles) ───────────────────────────────────
+# ── Interactive HTML (self-contained SVG — works offline / sandboxed) ────────
 
 def save_html(
     ordered: Sequence[Mapping[str, Any]],
@@ -395,16 +579,19 @@ def save_html(
     distance_m: float,
     duration_s: float,
     profile: str,
+    routing_source: str = "osrm",
 ) -> str:
+    """Self-contained HTML with numbered SVG markers. No CDN or map tiles."""
     stops_js = json.dumps(
         [
             {
+                "n": i + 1,
                 "name": s["name"],
                 "lat": s["lat"],
                 "lon": s["lon"],
                 "display": s.get("display_name") or s.get("address") or "",
             }
-            for s in ordered
+            for i, s in enumerate(ordered)
         ],
         ensure_ascii=False,
     )
@@ -415,6 +602,8 @@ def save_html(
     subtitle = f"{_fmt_km(distance_m)} | {_fmt_duration(duration_s)} | {profile}"
     if round_trip:
         subtitle += " | round trip"
+    if routing_source != "osrm":
+        subtitle += " | offline estimate"
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -422,25 +611,21 @@ def save_html(
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>{title_esc}</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
   :root {{
     --bg: #f5f7fa; --card: #fff; --text: #201f1e; --muted: #605e5c;
-    --accent: #0078d4; --border: #e1dfdd;
+    --accent: #0078d4; --border: #e1dfdd; --start: #107c10; --end: #d83b01;
   }}
   * {{ box-sizing: border-box; }}
   body {{
     margin: 0; font-family: "Segoe UI", system-ui, sans-serif;
     background: var(--bg); color: var(--text);
   }}
-  header {{
-    padding: 16px 20px 8px; max-width: 1100px; margin: 0 auto;
-  }}
+  header {{ padding: 16px 20px 8px; max-width: 1100px; margin: 0 auto; }}
   h1 {{ margin: 0 0 4px; font-size: 1.35rem; }}
   .sub {{ color: var(--muted); font-size: 0.9rem; margin-bottom: 12px; }}
   .layout {{
-    display: grid; grid-template-columns: 280px 1fr; gap: 12px;
+    display: grid; grid-template-columns: 300px 1fr; gap: 12px;
     max-width: 1100px; margin: 0 auto; padding: 0 16px 20px;
   }}
   @media (max-width: 800px) {{ .layout {{ grid-template-columns: 1fr; }} }}
@@ -449,17 +634,34 @@ def save_html(
     padding: 12px 14px; max-height: 70vh; overflow: auto;
   }}
   .panel h2 {{ margin: 0 0 10px; font-size: 0.95rem; }}
-  ol.stops {{ margin: 0; padding-left: 1.2rem; }}
-  ol.stops li {{ margin: 0 0 8px; font-size: 0.88rem; line-height: 1.35; }}
-  ol.stops .meta {{ color: var(--muted); font-size: 0.78rem; }}
-  #map {{
-    height: 70vh; min-height: 420px; border-radius: 10px;
-    border: 1px solid var(--border); z-index: 0;
+  ol.stops {{ margin: 0; padding: 0; list-style: none; }}
+  ol.stops li {{
+    display: grid; grid-template-columns: 28px 1fr; gap: 8px;
+    margin: 0 0 10px; font-size: 0.88rem; line-height: 1.35; align-items: start;
   }}
+  .badge {{
+    width: 26px; height: 26px; border-radius: 50%; background: var(--accent);
+    color: #fff; font: bold 12px/26px "Segoe UI", sans-serif; text-align: center;
+  }}
+  .badge.start {{ background: var(--start); }}
+  .badge.end {{ background: var(--end); }}
+  ol.stops .meta {{ color: var(--muted); font-size: 0.78rem; }}
+  .map-wrap {{
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 8px; min-height: 420px;
+  }}
+  .toolbar {{ display: flex; gap: 8px; margin-bottom: 8px; }}
+  .toolbar button {{
+    border: 1px solid var(--border); background: #fff; border-radius: 6px;
+    padding: 6px 10px; cursor: pointer; font-size: 0.85rem;
+  }}
+  .toolbar button:hover {{ border-color: var(--accent); color: var(--accent); }}
+  #mapSvg {{ width: 100%; height: 64vh; min-height: 400px; background: #eef3f8; border-radius: 8px; }}
   .foot {{
     max-width: 1100px; margin: 0 auto; padding: 0 16px 24px;
     font-size: 0.75rem; color: var(--muted);
   }}
+  .tip {{ fill: #201f1e; font: 600 11px "Segoe UI", sans-serif; }}
 </style>
 </head>
 <body>
@@ -472,54 +674,135 @@ def save_html(
     <h2>Stop sequence</h2>
     <ol class="stops" id="stopList"></ol>
   </aside>
-  <div id="map"></div>
+  <div class="map-wrap">
+    <div class="toolbar">
+      <button type="button" id="btnZoomIn" title="Zoom in">Zoom +</button>
+      <button type="button" id="btnZoomOut" title="Zoom out">Zoom -</button>
+      <button type="button" id="btnReset" title="Reset view">Reset</button>
+    </div>
+    <svg id="mapSvg" viewBox="0 0 800 560" xmlns="http://www.w3.org/2000/svg"></svg>
+  </div>
 </div>
-<p class="foot">© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors ·
-Routing via <a href="http://project-osrm.org/">OSRM</a> · Drag the map to explore</p>
+<p class="foot" id="footNote"></p>
 <script>
 const STOPS = {stops_js};
 const GEOM = {geom_js};
 const ROUND = {str(round_trip).lower()};
+const SOURCE = {json.dumps(routing_source)};
 
 const list = document.getElementById('stopList');
 STOPS.forEach((s, i) => {{
   const li = document.createElement('li');
-  li.innerHTML = `<strong>${{s.name}}</strong><div class="meta">${{s.display || (s.lat.toFixed(5)+', '+s.lon.toFixed(5))}}</div>`;
+  const cls = i === 0 ? 'badge start' : (i === STOPS.length - 1 && !ROUND ? 'badge end' : 'badge');
+  li.innerHTML = `<span class="${{cls}}">${{s.n}}</span>
+    <div><strong>${{s.n}}. ${{s.name}}</strong>
+    <div class="meta">${{s.display || (s.lat.toFixed(5)+', '+s.lon.toFixed(5))}}</div></div>`;
   list.appendChild(li);
 }});
 if (ROUND && STOPS.length) {{
   const li = document.createElement('li');
-  li.innerHTML = `<em>Return to ${{STOPS[0].name}}</em>`;
+  li.innerHTML = `<span class="badge start">↩</span><div><em>Return to 1. ${{STOPS[0].name}}</em></div>`;
   list.appendChild(li);
 }}
+document.getElementById('footNote').textContent = SOURCE === 'osrm'
+  ? '(c) OpenStreetMap contributors | Routing via OSRM | Numbered markers show visit order'
+  : 'Offline SVG map (no external tiles) | Approximate path | Numbered markers show visit order';
 
-const map = L.map('map');
-L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
-  maxZoom: 19,
-  attribution: '&copy; OpenStreetMap'
-}}).addTo(map);
+const svg = document.getElementById('mapSvg');
+const W = 800, H = 560, PAD = 48;
+let scale = 1, ox = 0, oy = 0;
 
-const latlngs = (GEOM.coordinates || []).map(c => [c[1], c[0]]);
-const line = L.polyline(latlngs, {{ color: '#0078d4', weight: 5, opacity: 0.9 }}).addTo(map);
-
-const bounds = [];
-STOPS.forEach((s, i) => {{
-  const colour = i === 0 ? '#107c10' : (i === STOPS.length - 1 && !ROUND ? '#d83b01' : '#0078d4');
-  const m = L.circleMarker([s.lat, s.lon], {{
-    radius: 10, color: '#fff', weight: 2, fillColor: colour, fillOpacity: 1
-  }}).addTo(map);
-  m.bindPopup(`<strong>${{i + 1}}. ${{s.name}}</strong><br/>${{s.display || ''}}`);
-  const icon = L.divIcon({{
-    className: '',
-    html: `<div style="color:white;font:bold 11px Segoe UI,sans-serif;text-align:center;line-height:20px;width:20px;height:20px;border-radius:50%;background:${{colour}};border:2px solid white;box-shadow:0 1px 3px rgba(0,0,0,.35)">${{i + 1}}</div>`,
-    iconSize: [20, 20], iconAnchor: [10, 10]
+function bounds() {{
+  const pts = (GEOM.coordinates || []).map(c => [c[0], c[1]]);
+  STOPS.forEach(s => pts.push([s.lon, s.lat]));
+  if (!pts.length) return {{ minLon: 0, maxLon: 1, minLat: 0, maxLat: 1 }};
+  let minLon = Infinity, maxLon = -Infinity, minLat = Infinity, maxLat = -Infinity;
+  pts.forEach(([lon, lat]) => {{
+    if (lon < minLon) minLon = lon; if (lon > maxLon) maxLon = lon;
+    if (lat < minLat) minLat = lat; if (lat > maxLat) maxLat = lat;
   }});
-  L.marker([s.lat, s.lon], {{ icon }}).addTo(map)
-    .bindPopup(`<strong>${{i + 1}}. ${{s.name}}</strong><br/>${{s.display || ''}}`);
-  bounds.push([s.lat, s.lon]);
-}});
-if (latlngs.length) map.fitBounds(line.getBounds().pad(0.12));
-else if (bounds.length) map.fitBounds(bounds, {{ padding: [40, 40] }});
+  if (minLon === maxLon) {{ minLon -= 0.01; maxLon += 0.01; }}
+  if (minLat === maxLat) {{ minLat -= 0.01; maxLat += 0.01; }}
+  return {{ minLon, maxLon, minLat, maxLat }};
+}}
+
+function project(lon, lat, b) {{
+  const x = PAD + (lon - b.minLon) / (b.maxLon - b.minLon) * (W - 2 * PAD);
+  const y = PAD + (1 - (lat - b.minLat) / (b.maxLat - b.minLat)) * (H - 2 * PAD);
+  return [x, y];
+}}
+
+function colour(i) {{
+  if (i === 0) return '#107c10';
+  if (i === STOPS.length - 1 && !ROUND) return '#d83b01';
+  return '#0078d4';
+}}
+
+function render() {{
+  const b = bounds();
+  svg.innerHTML = '';
+  const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  g.setAttribute('transform', `translate(${{ox}},${{oy}}) scale(${{scale}})`);
+
+  // grid
+  for (let i = 0; i <= 8; i++) {{
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    const x = PAD + i * (W - 2 * PAD) / 8;
+    line.setAttribute('x1', x); line.setAttribute('x2', x);
+    line.setAttribute('y1', PAD); line.setAttribute('y2', H - PAD);
+    line.setAttribute('stroke', '#dbe4ee'); line.setAttribute('stroke-width', '1');
+    g.appendChild(line);
+  }}
+
+  const coords = GEOM.coordinates || [];
+  if (coords.length > 1) {{
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+    path.setAttribute('points', coords.map(c => project(c[0], c[1], b).join(',')).join(' '));
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', '#0078d4');
+    path.setAttribute('stroke-width', '4');
+    path.setAttribute('stroke-linecap', 'round');
+    path.setAttribute('stroke-linejoin', 'round');
+    path.setAttribute('opacity', '0.9');
+    g.appendChild(path);
+  }}
+
+  STOPS.forEach((s, i) => {{
+    const [x, y] = project(s.lon, s.lat, b);
+    const c = colour(i);
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('cx', x); circle.setAttribute('cy', y);
+    circle.setAttribute('r', 14);
+    circle.setAttribute('fill', c);
+    circle.setAttribute('stroke', '#fff');
+    circle.setAttribute('stroke-width', '3');
+    g.appendChild(circle);
+
+    const num = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    num.setAttribute('x', x); num.setAttribute('y', y + 1);
+    num.setAttribute('text-anchor', 'middle');
+    num.setAttribute('dominant-baseline', 'middle');
+    num.setAttribute('fill', '#fff');
+    num.setAttribute('font-size', '13');
+    num.setAttribute('font-weight', '700');
+    num.setAttribute('font-family', 'Segoe UI, system-ui, sans-serif');
+    num.textContent = String(s.n);
+    g.appendChild(num);
+
+    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    label.setAttribute('x', x + 18); label.setAttribute('y', y - 10);
+    label.setAttribute('class', 'tip');
+    label.textContent = s.n + '. ' + s.name;
+    g.appendChild(label);
+  }});
+
+  svg.appendChild(g);
+}}
+
+document.getElementById('btnZoomIn').onclick = () => {{ scale = Math.min(3, scale * 1.2); render(); }};
+document.getElementById('btnZoomOut').onclick = () => {{ scale = Math.max(0.5, scale / 1.2); render(); }};
+document.getElementById('btnReset').onclick = () => {{ scale = 1; ox = 0; oy = 0; render(); }};
+render();
 </script>
 </body>
 </html>
@@ -665,11 +948,18 @@ def plan_route(data: Mapping[str, Any] | str) -> dict[str, Any]:
     if profile not in PROFILES:
         raise ValueError(f"`profile` must be one of {PROFILES}.")
 
+    mode = str(payload.get("mode", "auto")).lower()
+    if mode not in MODES:
+        raise ValueError(f"`mode` must be one of {MODES}.")
+
     round_trip = bool(payload.get("round_trip", True))
     title = str(payload.get("title") or payload.get("chart_title") or "Optimised route")
     prefix = str(payload.get("out_prefix", "route"))
+    lookup_path = payload.get("place_lookup_path")
 
-    resolved = resolve_stops(stops_in)
+    resolved, warnings = resolve_stops(
+        stops_in, mode=mode, place_lookup_path=lookup_path
+    )
 
     start = payload.get("start", 0)
     if isinstance(start, str):
@@ -680,14 +970,41 @@ def plan_route(data: Mapping[str, Any] | str) -> dict[str, Any]:
     else:
         start_idx = int(start)
 
-    durations, distances = osrm_table(resolved, profile=profile)
-    # Optimise on duration (travel time); fall back to distance if needed
-    order_idx = optimise_order(durations, start=start_idx, round_trip=round_trip)
-    ordered = [resolved[i] for i in order_idx]
+    routing_source = "haversine_offline"
+    durations: list[list[float]]
+    route: dict[str, Any]
 
-    # Build OSRM route for the ordered waypoints (+ return home if round trip)
-    route_stops = ordered + ([ordered[0]] if round_trip and len(ordered) > 1 else [])
-    route = osrm_route(route_stops, profile=profile)
+    if mode in ("auto", "online"):
+        try:
+            durations, _distances = osrm_table(resolved, profile=profile)
+            order_idx = optimise_order(durations, start=start_idx, round_trip=round_trip)
+            ordered = [resolved[i] for i in order_idx]
+            route_stops = ordered + (
+                [ordered[0]] if round_trip and len(ordered) > 1 else []
+            )
+            route = osrm_route(route_stops, profile=profile)
+            routing_source = "osrm"
+        except Exception as e:
+            if mode == "online":
+                raise
+            warnings.append(f"Live OSRM unavailable ({e}); using offline haversine.")
+            durations, _distances = offline_table(resolved, profile=profile)
+            order_idx = optimise_order(durations, start=start_idx, round_trip=round_trip)
+            ordered = [resolved[i] for i in order_idx]
+            route_stops = ordered + (
+                [ordered[0]] if round_trip and len(ordered) > 1 else []
+            )
+            route = offline_route(route_stops, profile=profile)
+            routing_source = "haversine_offline"
+    else:
+        durations, _distances = offline_table(resolved, profile=profile)
+        order_idx = optimise_order(durations, start=start_idx, round_trip=round_trip)
+        ordered = [resolved[i] for i in order_idx]
+        route_stops = ordered + (
+            [ordered[0]] if round_trip and len(ordered) > 1 else []
+        )
+        route = offline_route(route_stops, profile=profile)
+        routing_source = "haversine_offline"
 
     chart_path = str(payload.get("chart_path", f"{prefix}_map.png"))
     save_png(
@@ -710,14 +1027,28 @@ def plan_route(data: Mapping[str, Any] | str) -> dict[str, Any]:
         round_trip=round_trip,
         profile=profile,
         chart_path=os.path.abspath(chart_path),
+        routing_source=routing_source,
     )
     md_path = str(payload.get("markdown_path", f"{prefix}_summary.md"))
     with open(md_path, "w", encoding="utf-8") as fh:
         fh.write(md)
 
+    method = (
+        "OSRM + nearest-neighbour + 2-opt"
+        if routing_source == "osrm"
+        else "haversine offline + nearest-neighbour + 2-opt"
+    )
+    attribution = (
+        "(c) OpenStreetMap contributors | Routing via OSRM"
+        if routing_source == "osrm"
+        else "Offline estimate (haversine x road factor) | place_lookup / supplied coords"
+    )
+
     result: dict[str, Any] = {
         "title": title,
         "profile": profile,
+        "mode": mode,
+        "routing_source": routing_source,
         "round_trip": round_trip,
         "distance_m": route["distance_m"],
         "distance_label": _fmt_km(route["distance_m"]),
@@ -729,8 +1060,9 @@ def plan_route(data: Mapping[str, Any] | str) -> dict[str, Any]:
         "csv_path": os.path.abspath(csv_path),
         "markdown_path": os.path.abspath(md_path),
         "markdown": md,
-        "method": "OSRM table + nearest-neighbour + 2-opt",
-        "attribution": "(c) OpenStreetMap contributors | Routing via OSRM",
+        "method": method,
+        "attribution": attribution,
+        "warnings": warnings,
     }
 
     if bool(payload.get("html", False)):
@@ -744,6 +1076,7 @@ def plan_route(data: Mapping[str, Any] | str) -> dict[str, Any]:
             distance_m=route["distance_m"],
             duration_s=route["duration_s"],
             profile=profile,
+            routing_source=routing_source,
         )
         result["html_path"] = os.path.abspath(html_path)
 
@@ -785,6 +1118,8 @@ def _build_parser() -> argparse.ArgumentParser:
         epilog=__doc__,
     )
     p.add_argument("--payload", required=True, help="Path to JSON payload with stops.")
+    p.add_argument("--mode", choices=list(MODES), default=None,
+                   help="auto (default) | offline (sandbox) | online")
     p.add_argument("--profile", choices=list(PROFILES), default=None)
     p.add_argument("--round-trip", dest="round_trip", action="store_true", default=None)
     p.add_argument("--one-way", dest="round_trip", action="store_false")
@@ -800,6 +1135,8 @@ def _build_parser() -> argparse.ArgumentParser:
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = _build_parser().parse_args(argv)
     data = _as_payload(args.payload)
+    if args.mode is not None:
+        data["mode"] = args.mode
     if args.profile is not None:
         data["profile"] = args.profile
     if args.round_trip is not None:
@@ -817,9 +1154,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     result = plan_route(data)
 
-    # Always print the markdown summary for chat paste.
     print(result["markdown"])
     print()
+    print(f"Mode:     {result.get('mode')} ({result.get('routing_source')})")
     print(f"PNG:      {result['chart_path']}")
     print(f"CSV:      {result['csv_path']}")
     if result.get("html_path"):
@@ -828,6 +1165,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"GeoJSON:  {result['geojson_path']}")
     if result.get("kml_path"):
         print(f"KML:      {result['kml_path']}")
+    for w in result.get("warnings") or []:
+        print(f"Warning:  {w}")
 
     if args.json_out:
         slim = {k: v for k, v in result.items() if k != "markdown"}

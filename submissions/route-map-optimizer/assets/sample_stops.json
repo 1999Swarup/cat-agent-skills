@@ -1,5 +1,6 @@
 {
   "title": "Sydney field visits",
+  "mode": "offline",
   "profile": "driving",
   "round_trip": true,
   "start": 0,

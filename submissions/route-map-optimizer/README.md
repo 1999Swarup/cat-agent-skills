@@ -1,68 +1,63 @@
 # Route Map Optimizer
 
-Turn a list of places into an efficient visit order and a clear route map —
-powered by **OpenStreetMap** (Nominatim geocoding + OSRM road routing).
+Turn a list of places into an efficient visit order and a clear route map.
 
-Paste addresses or coordinates; get a numbered stop sequence, travel distance
-and time, a shareable map image, and optional interactive or GIS exports.
+Built for **Copilot Studio sandboxes** where live OpenStreetMap calls often fail
+(SSL/network limits): the skill runs **fully offline** with approximate place
+centroids or your lat/lon, and still produces a markdown summary, PNG map, and
+optional interactive HTML with **numbered stop markers**.
+
+When the network is available, it can use live Nominatim geocoding and OSRM
+road routing (`mode: auto` or `online`).
 
 ## Why this skill exists
 
-Planning “which stop next?” by eye is slow and often wrong. This skill:
+Planning “which stop next?” by eye is slow. This skill:
 
-1. Finds each place on the map  
-2. Measures real road travel between them  
-3. Reorders stops to reduce travel time  
-4. Shows the result as markdown + a map image you can drop into chat or email  
+1. Resolves each place (coords, lookup, or live geocode)  
+2. Optimises visit order (nearest-neighbour + 2-opt)  
+3. Estimates distance and travel time  
+4. Shows a numbered stop table **with a map image inline**  
+5. Optionally exports HTML / GeoJSON / KML  
+
+## Sandbox behaviour (important)
+
+| Mode | Behaviour |
+| --- | --- |
+| `offline` (recommended in Copilot Studio) | No network. Uses lat/lon or `assets/place_lookup.json`. Haversine × road factor. |
+| `auto` | Try OSRM; on SSL/network failure, fall back offline automatically. |
+| `online` | Require live OSRM (fails clearly if blocked). |
+
+HTML is **self-contained SVG** — no Leaflet CDN and no map tiles — so it opens
+even when outbound HTTPS is blocked. Markers show visit order **1, 2, 3…**.
 
 ## Real use cases
 
-- **Field sales / account visits** — best order for a day’s client calls  
-- **Insurance inspections** — route assessors across several properties  
-- **Home care / community services** — daily visit sequencing  
-- **Event or logistics drop-offs** — pickup and delivery order  
-- **Climate / field surveys** — efficient sampling-site loops  
+- Field sales / account visits  
+- Insurance property inspections  
+- Home care daily rounds  
+- Event or logistics drop-offs  
+- Climate / field survey site loops  
 
 ## How to use it
 
-> Optimise a driving round trip for these stops, starting at the office. Show
-> the route in markdown with a map image, and give me interactive HTML plus
-> GeoJSON.
-
-Or pass structured JSON (see `assets/sample_stops.json`).
+> Optimise a driving round trip for Bondi, Manly, Newtown, Parramatta, and the
+> CBD. Use offline mode. Show markdown + map, and give me HTML with numbered markers.
 
 ## What you get
 
-1. **Markdown summary** — distance, time, numbered stop table, and the map
-   image referenced inline  
-2. **PNG route map** — road path + numbered markers  
-3. **CSV** of the ordered stops  
-4. Optional **interactive HTML** — Leaflet map on OSM tiles, pan/zoom, stop popups  
-5. Optional **GeoJSON** — route line + stop points for GIS tools  
-6. Optional **KML** — open in Google Earth / many map apps  
-
-## Profiles
-
-| Profile | When to use |
-| --- | --- |
-| `driving` (default) | Cars / vans |
-| `walking` | On-foot visits in a small area |
-| `cycling` | Bike couriers / campus loops |
-
-## Limits (v1)
-
-- Best for **about 2–15 stops**  
-- Uses public OSM/OSRM services (needs network); not live traffic  
-- Optimisation is nearest-neighbour + 2-opt (strong practical result, not a
-  guaranteed global optimum for huge fleets)  
-- Address geocoding is rate-limited (~1 request/second)  
+1. **Markdown** — distance, time, numbered table, map image  
+2. **PNG** — route path + numbered markers  
+3. **CSV** — ordered stops  
+4. Optional **HTML** — zoomable SVG map, numbered badges matching the table  
+5. Optional **GeoJSON** / **KML**  
 
 ## Dependencies
 
-`matplotlib` for the PNG. Network access to Nominatim and OSRM. No API key
-required for the public endpoints used in v1.
+`matplotlib` for PNG. Network only needed for `online` / successful `auto` live
+routing. No API key for the public OSM/OSRM endpoints.
 
 ## Attribution
 
-Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors.  
-Routing © [OSRM](http://project-osrm.org/) / OpenStreetMap.
+Live mode: map data (c) OpenStreetMap contributors; routing via OSRM.  
+Offline mode: approximate centroids / haversine estimates — not turn-by-turn.

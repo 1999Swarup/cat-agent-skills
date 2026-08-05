@@ -3,29 +3,43 @@ name: route-map-optimizer
 description: "Use this skill whenever the user asks to plan, optimise, or map a multi-stop route — field visits, deliveries, inspections, drop-offs — and wants a stop order, distance/time estimate, route map image, or exports (HTML, GeoJSON, KML). Trigger on phrases like 'optimise this route', 'best order to visit these addresses', 'draw a map of these stops', or when they paste a list of places and ask for a driving/walking path. Do NOT trigger for single-destination turn-by-turn navigation apps, or for non-geographic process 'routing'."
 ---
 
-Convert a list of stops into an optimised visit order via the bundled
-`scripts/route_map.py` toolkit. Geocode with OpenStreetMap Nominatim, build a
-travel matrix and road geometry with OSRM, then return a markdown route table
-inline with a PNG map. Offer interactive HTML, GeoJSON, and KML when asked.
+Convert a list of stops into an optimised visit order via `scripts/route_map.py`.
+Works **offline in restricted sandboxes** (no live OSM/OSRM required) and can
+use live Nominatim + OSRM when the network allows.
+
+Always return a markdown stop table **inline with a PNG map**. Optional
+self-contained HTML shows **numbered route markers** (no CDN/tiles). Optional
+GeoJSON / KML on request.
 
 ## Instructions
 
-1. **Intake.** Collect stops. Each stop needs either an `address` **or** both
-   `lat` and `lon`. Optional per stop: `name`. If fewer than 2 stops are given,
-   **stop and ask** — do not invent locations.
+1. **Intake.** Collect at least 2 stops. Prefer one of:
+   - `lat` + `lon` (best — no geocoding)
+   - Suburb/landmark `name` or `address` that matches `assets/place_lookup.json`
+   - Full address (live Nominatim only when online)
 
-2. **Defaults**
-   - `profile`: `driving` (also `walking`, `cycling`)
-   - `round_trip`: `true` (return to the first stop)
-   - `start`: first stop (index `0` or stop name)
-   - Always produce PNG map + CSV of ordered stops + markdown summary
-   - Produce HTML / GeoJSON / KML only when the user asks (or payload flags are set)
+   If fewer than 2 stops: **stop and ask**. Do not invent coordinates outside
+   the bundled place lookup without telling the user they are approximate.
 
-3. **Execute** with the toolkit (import or CLI). Always surface:
-   - Optimised stop sequence
-   - Total distance and estimated travel time
-   - Markdown table **and** the map image inline in the reply
-   - File paths for downloads
+2. **Sandbox / Copilot Studio default.** Set `"mode": "offline"` unless the
+   user explicitly wants live road routing. Offline uses:
+   - bundled place centroids or supplied lat/lon
+   - haversine distance × road factor
+   - nearest-neighbour + 2-opt
+   - straight-line path on PNG/HTML (clearly labelled as an estimate)
+
+   In `auto` mode the toolkit tries OSRM first and **falls back offline** on
+   SSL/network failure — do not ask the user A/B questions about hardcoding
+   coords; call the toolkit and report `routing_source` from the result.
+
+3. **Defaults**
+   - `mode`: `offline` in sandboxes; otherwise `auto`
+   - `profile`: `driving` (`walking`, `cycling` also supported)
+   - `round_trip`: `true`
+   - Always: PNG + CSV + markdown
+   - Optional: `html`, `geojson`, `kml`
+
+4. **Execute**
 
 ```python
 import sys
@@ -33,44 +47,40 @@ sys.path.insert(0, "scripts")
 from route_map import plan_route
 
 result = plan_route({
+    "mode": "offline",          # use in Copilot Studio / SSL-restricted hosts
     "stops": [
-        {"name": "Office", "address": "1 Macquarie St, Sydney NSW"},
-        {"name": "Client A", "address": "Bondi Beach, NSW"},
-        {"name": "Client B", "lat": -33.8840, "lon": 151.2070},
+        {"name": "Office", "address": "1 Macquarie St, Sydney"},
+        {"name": "Bondi", "address": "Bondi Beach"},
+        {"name": "Manly", "address": "Manly"},
+        {"name": "Newtown", "address": "Newtown"},
     ],
     "round_trip": True,
     "profile": "driving",
     "title": "Tuesday field visits",
-    "html": True,       # optional Leaflet + OSM interactive map
-    "geojson": True,    # optional FeatureCollection
-    "kml": True,        # optional Google Earth / GIS
+    "html": True,
+    "geojson": True,
     "out_prefix": "route",
 })
 
-# Paste into chat for the user:
-print(result["markdown"])
+print(result["markdown"])   # paste into chat (table + map image)
 ```
 
-4. **Reply layout.** Paste `result["markdown"]` so the user sees the numbered
-   stop table and the map image together. Then list optional export paths
-   (`html_path`, `geojson_path`, `kml_path`). Mention attribution once:
-   (c) OpenStreetMap contributors | Routing via OSRM.
-
-5. **Ambiguous geocoding.** If Nominatim fails or the address is too vague,
-   ask for a clearer address or lat/lon. Never invent coordinates.
+5. **Reply layout.** Paste `result["markdown"]` so the numbered table and map
+   appear together. State clearly if `routing_source` is `haversine_offline`
+   (approximate). List export paths. HTML markers are numbered 1…N to match
+   the table.
 
 ## Guardrails
 
-- Do not invent stop locations or claim live traffic accuracy.
-- Optimisation uses OSRM travel times with nearest-neighbour + 2-opt — good for
-  typical field lists (up to ~15 stops); say so if the user asks about optimality.
-- Respect Nominatim usage (the toolkit sleeps ~1s between address lookups).
-- Prefer the bundled toolkit over ad-hoc map scripts for consistent exports.
-- Keep chat replies to the markdown summary + paths; do not dump raw GeoJSON.
+- Do not claim live traffic or turn-by-turn accuracy in offline mode.
+- Prefer toolkit `mode: offline` over hand-rolled coordinate scripts.
+- Only use place-lookup centroids for known aliases; for unknown places ask
+  for lat/lon (or switch to online if available).
+- Keep chat to markdown + paths; do not dump raw GeoJSON.
 
 ## Bundled files
 
-- `scripts/route_map.py` — geocode, optimise, PNG, HTML, GeoJSON, KML, CSV
-- `references/cheatsheet.md` — payload fields, CLI, test prompts
-- `assets/sample_stops.json` — address-based Sydney demo
-- `assets/sample_stops_coords.json` — lat/lon demo (no geocoding wait)
+- `scripts/route_map.py` — offline/online planner, PNG, HTML, GeoJSON, KML
+- `assets/place_lookup.json` — approximate Sydney-area centroids for offline use
+- `assets/sample_stops.json` / `sample_stops_coords.json` — demos
+- `references/cheatsheet.md` — payload fields and CLI

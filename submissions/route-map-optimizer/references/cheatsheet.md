@@ -4,8 +4,8 @@ Engine: `scripts/route_map.py`
 
 ```python
 from route_map import plan_route
-result = plan_route({ ... })
-print(result["markdown"])   # paste into chat with the map image
+result = plan_route({"mode": "offline", "stops": [...], "html": True})
+print(result["markdown"])
 ```
 
 ---
@@ -14,88 +14,51 @@ print(result["markdown"])   # paste into chat with the map image
 
 | Field | Required | Notes |
 | --- | --- | --- |
-| `stops` | yes | List of `{name?, address?}` or `{name?, lat, lon}` |
-| `profile` | no | `driving` (default) \| `walking` \| `cycling` |
-| `round_trip` | no | default `true` — return to first stop |
-| `start` | no | index or stop `name` (default `0`) |
+| `stops` | yes | `{name?, address?}` or `{name?, lat, lon}` |
+| `mode` | no | `offline` (sandbox) \| `auto` (default) \| `online` |
+| `profile` | no | `driving` \| `walking` \| `cycling` |
+| `round_trip` | no | default `true` |
+| `start` | no | index or stop name |
 | `title` | no | map / HTML title |
-| `html` | no | `true` → Leaflet interactive map |
-| `geojson` | no | `true` → FeatureCollection export |
-| `kml` | no | `true` → KML export |
+| `html` | no | self-contained SVG with **numbered markers** |
+| `geojson` / `kml` | no | GIS exports |
 | `out_prefix` | no | default `route` |
 
-### Stop object
+### Resolving locations (offline-friendly)
 
-| Keys | Notes |
-| --- | --- |
-| `name` | optional label |
-| `address` | geocoded via Nominatim if lat/lon missing |
-| `lat`, `lon` | skip geocoding when both provided |
+1. `lat` + `lon` if provided  
+2. Else match `name` / `address` against `assets/place_lookup.json`  
+3. Else (auto/online) call Nominatim  
 
 ---
 
-## Return payload (key fields)
-
-```json
-{
-  "distance_m": 0,
-  "distance_label": "12.4 km",
-  "duration_s": 0,
-  "duration_label": "28 min",
-  "stop_order": ["Office", "A", "B"],
-  "chart_path": ".../route_map.png",
-  "csv_path": ".../route_stops.csv",
-  "markdown_path": ".../route_summary.md",
-  "markdown": "### Optimised route\n...",
-  "html_path": ".../route_map.html",
-  "geojson_path": ".../route.geojson",
-  "kml_path": ".../route.kml"
-}
-```
-
-Always paste `markdown` into the user reply so the table and map appear together.
-
----
-
-## CLI examples
+## CLI
 
 ```bash
-# Coords demo (fast — no geocoding delay)
+# Sandbox-safe (no network)
 python scripts/route_map.py \
-  --payload assets/sample_stops_coords.json \
-  --html --geojson --kml
+  --payload assets/sample_stops.json --mode offline --html --geojson --kml
 
-# Address demo (Nominatim; ~1s per address)
+# Coords demo
 python scripts/route_map.py \
-  --payload assets/sample_stops.json \
-  --html --geojson --kml
+  --payload assets/sample_stops_coords.json --mode offline --html
 
-# One-way walking route
+# Try live OSRM, fall back if SSL blocked
 python scripts/route_map.py \
-  --payload assets/sample_stops_coords.json \
-  --profile walking --one-way --html
+  --payload assets/sample_stops_coords.json --mode auto --html
 ```
 
 ---
 
 ## Test prompts
 
-### 1. Field visits (addresses)
+### Sandbox suburbs
 
-> Optimise a driving round trip for: Office at 1 Macquarie St Sydney, then
-> Circular Quay, Bondi Beach, Newtown, and Pyrmont. Show markdown + map image,
-> and export HTML and GeoJSON.
+> Optimise a round trip for Bondi, Manly, Coogee, Newtown, Parramatta. Offline.
+> Markdown + PNG + HTML with numbered markers.
 
-Expect: geocoding, reordered stops, PNG + markdown table, HTML + GeoJSON paths.
+Expect: `routing_source=haversine_offline`, numbered HTML badges 1…N.
 
-### 2. Coords only
+### Network failure (auto)
 
-> Plan a route for these lat/lon points… give me KML for Google Earth.
-
-Expect: no Nominatim calls; KML written.
-
-### 3. Disambiguation
-
-> Draw a map for our delivery run tomorrow.
-
-Expect: ask for stop list / addresses — **no script run**.
+Expect toolkit fallback without asking the user to hardcode coords manually.
