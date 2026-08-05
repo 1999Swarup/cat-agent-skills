@@ -715,13 +715,14 @@ def save_html(
     *,
     out: str,
     title: str,
-    round_trip: bool,
-    distance_m: float,
-    duration_s: float,
-    profile: str,
+    round_trip: bool = False,
+    distance_m: float = 0.0,
+    duration_s: float = 0.0,
+    profile: str = "driving",
     routing_source: str = "osrm",
+    kind: str = "route",
 ) -> str:
-    """Leaflet + OSM interactive map with numbered markers, route, and legend."""
+    """Leaflet + OSM interactive map with markers/icons, optional route, legend."""
     stops_js = json.dumps(
         [
             {
@@ -729,23 +730,53 @@ def save_html(
                 "name": s["name"],
                 "lat": s["lat"],
                 "lon": s["lon"],
-                "display": s.get("display_name") or s.get("address") or "",
+                "display": s.get("display_name") or s.get("location") or s.get("address") or "",
+                "value": s.get("value") or "",
+                "icon": s.get("icon") or "pin",
+                "emoji": s.get("emoji") or "📍",
+                "color": s.get("color") or "#0078d4",
             }
             for i, s in enumerate(ordered)
         ],
         ensure_ascii=False,
     )
-    geom_js = json.dumps(geometry, ensure_ascii=False)
+    geom_js = json.dumps(
+        geometry or {"type": "LineString", "coordinates": []}, ensure_ascii=False
+    )
     title_esc = (
-        title.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+        title.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
     )
-    dist_label = _fmt_km(distance_m)
-    time_label = _fmt_duration(duration_s)
-    method_label = (
-        "OSRM road route"
-        if routing_source == "osrm"
-        else "Approximate path (offline estimate)"
-    )
+    is_route = kind == "route"
+    if is_route:
+        method_label = (
+            "OSRM road route"
+            if routing_source == "osrm"
+            else "Approximate path (offline estimate)"
+        )
+        chips = (
+            f'<div class="chip"><strong>{_fmt_km(distance_m)}</strong> distance</div>'
+            f'<div class="chip"><strong>{_fmt_duration(duration_s)}</strong> est. time</div>'
+            f'<div class="chip"><strong>{profile}</strong> profile</div>'
+            f'<div class="chip"><strong>'
+            f'{"Round trip" if round_trip else "One way"}</strong></div>'
+        )
+        panel_title = "Visit order"
+        hint = "Click a stop to fly to it on the map."
+        route_btn_display = "inline-block"
+        point_word = "stops"
+    else:
+        method_label = "Marker map (no routing)"
+        chips = (
+            f'<div class="chip"><strong>{len(ordered)}</strong> locations</div>'
+            f'<div class="chip"><strong>Icons / values</strong> supported</div>'
+        )
+        panel_title = "Locations"
+        hint = "Click a location to fly to its marker."
+        route_btn_display = "none"
+        point_word = "points"
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -760,14 +791,12 @@ def save_html(
 <style>
   :root {{
     --bg: #eef2f6; --card: #ffffff; --text: #1b1a19; --muted: #605e5c;
-    --accent: #0078d4; --border: #d8d6d4; --start: #107c10; --end: #d83b01;
-    --route: #0f6cbd; --shadow: 0 8px 28px rgba(15, 23, 42, 0.10);
+    --accent: #0078d4; --border: #d8d6d4; --shadow: 0 8px 28px rgba(15, 23, 42, 0.10);
   }}
   * {{ box-sizing: border-box; }}
   body {{
     margin: 0; min-height: 100vh;
-    font-family: "Segoe UI", system-ui, sans-serif;
-    color: var(--text);
+    font-family: "Segoe UI", system-ui, sans-serif; color: var(--text);
     background:
       radial-gradient(1200px 500px at 10% -10%, #d6e8f8 0%, transparent 55%),
       radial-gradient(900px 400px at 100% 0%, #e7f2ea 0%, transparent 50%),
@@ -784,78 +813,60 @@ def save_html(
   .chip {{
     background: var(--card); border: 1px solid var(--border); border-radius: 999px;
     padding: 6px 12px; font-size: 0.82rem; color: var(--muted);
-    box-shadow: 0 1px 2px rgba(0,0,0,.04);
   }}
   .chip strong {{ color: var(--text); font-weight: 600; }}
-  .layout {{
-    display: grid; grid-template-columns: 320px 1fr; gap: 14px;
-  }}
+  .layout {{ display: grid; grid-template-columns: 320px 1fr; gap: 14px; }}
   @media (max-width: 860px) {{ .layout {{ grid-template-columns: 1fr; }} }}
   .panel, .map-card {{
     background: var(--card); border: 1px solid var(--border);
     border-radius: 14px; box-shadow: var(--shadow);
   }}
-  .panel {{ padding: 14px 14px 10px; max-height: 72vh; overflow: auto; }}
+  .panel {{ padding: 14px; max-height: 72vh; overflow: auto; }}
   .panel h2 {{ margin: 0 0 10px; font-size: 0.95rem; }}
   .hint {{ color: var(--muted); font-size: 0.78rem; margin: -4px 0 12px; }}
   ol.stops {{ margin: 0; padding: 0; list-style: none; }}
   ol.stops li {{
-    display: grid; grid-template-columns: 30px 1fr; gap: 10px;
-    padding: 9px 8px; margin: 0 0 4px; border-radius: 10px;
-    cursor: pointer; transition: background .15s ease;
+    display: grid; grid-template-columns: 34px 1fr; gap: 10px;
+    padding: 9px 8px; margin: 0 0 4px; border-radius: 10px; cursor: pointer;
   }}
   ol.stops li:hover, ol.stops li.active {{ background: #f3f8fd; }}
   .badge {{
-    width: 28px; height: 28px; border-radius: 50%; background: var(--accent);
-    color: #fff; font: 700 12px/28px "Segoe UI", sans-serif; text-align: center;
-    box-shadow: 0 2px 6px rgba(0,120,212,.35);
+    width: 32px; height: 32px; border-radius: 50%; background: var(--accent);
+    color: #fff; font: 700 14px/32px "Segoe UI", sans-serif; text-align: center;
   }}
-  .badge.start {{ background: var(--start); box-shadow: 0 2px 6px rgba(16,124,16,.35); }}
-  .badge.end {{ background: var(--end); box-shadow: 0 2px 6px rgba(216,59,1,.35); }}
-  .badge.ret {{ background: #8764b8; box-shadow: 0 2px 6px rgba(135,100,184,.35); }}
   ol.stops .meta {{ color: var(--muted); font-size: 0.76rem; margin-top: 2px; }}
+  ol.stops .val {{ font-weight: 600; color: var(--text); font-size: 0.84rem; }}
   .map-card {{ position: relative; overflow: hidden; min-height: 520px; }}
   #map {{ height: 72vh; min-height: 520px; width: 100%; }}
   .legend {{
     position: absolute; z-index: 1000; right: 12px; bottom: 28px;
     background: rgba(255,255,255,.96); border: 1px solid var(--border);
     border-radius: 12px; padding: 10px 12px; box-shadow: var(--shadow);
-    font-size: 0.78rem; line-height: 1.45; min-width: 160px;
+    font-size: 0.78rem; min-width: 170px; max-width: 230px;
   }}
   .legend h3 {{ margin: 0 0 6px; font-size: 0.8rem; }}
   .legend-row {{ display: flex; align-items: center; gap: 8px; margin: 4px 0; }}
   .swatch {{
-    width: 14px; height: 14px; border-radius: 50%; border: 2px solid #fff;
-    box-shadow: 0 0 0 1px rgba(0,0,0,.12);
+    width: 16px; height: 16px; border-radius: 50%; border: 2px solid #fff;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.12); display:inline-flex; align-items:center;
+    justify-content:center; font-size: 10px;
   }}
-  .swatch.line {{
-    width: 22px; height: 4px; border-radius: 2px; border: none; box-shadow: none;
-  }}
+  .swatch.line {{ width: 22px; height: 4px; border-radius: 2px; border: none; box-shadow: none; }}
   .toolbar {{
-    position: absolute; z-index: 1000; top: 12px; left: 52px;
-    display: flex; gap: 6px; flex-wrap: wrap;
+    position: absolute; z-index: 1000; top: 12px; left: 52px; display: flex; gap: 6px;
   }}
   .toolbar button {{
     border: 1px solid var(--border); background: rgba(255,255,255,.96);
     border-radius: 8px; padding: 7px 11px; cursor: pointer; font-size: 0.8rem;
-    box-shadow: 0 2px 8px rgba(0,0,0,.08);
   }}
-  .toolbar button:hover {{ border-color: var(--accent); color: var(--accent); }}
-  .foot {{
-    margin-top: 12px; font-size: 0.75rem; color: var(--muted);
-  }}
+  .foot {{ margin-top: 12px; font-size: 0.75rem; color: var(--muted); }}
   .foot a {{ color: var(--accent); }}
   .marker-pin {{
-    width: 30px; height: 30px; border-radius: 50%;
-    color: #fff; font: 700 13px/30px "Segoe UI", sans-serif; text-align: center;
+    width: 34px; height: 34px; border-radius: 50%; color: #fff;
+    font: 700 14px/34px "Segoe UI", sans-serif; text-align: center;
     border: 3px solid #fff; box-shadow: 0 3px 10px rgba(0,0,0,.28);
   }}
-  .leaflet-popup-content {{ margin: 10px 12px; font-size: 0.88rem; }}
-  .popup-n {{
-    display: inline-block; min-width: 22px; height: 22px; border-radius: 50%;
-    background: var(--accent); color: #fff; font: 700 11px/22px "Segoe UI", sans-serif;
-    text-align: center; margin-right: 6px;
-  }}
+  .marker-pin.icon {{ font-size: 18px; line-height: 34px; }}
 </style>
 </head>
 <body>
@@ -866,39 +877,29 @@ def save_html(
       <div class="sub">{method_label} on OpenStreetMap</div>
     </div>
     <div class="chips">
-      <div class="chip"><strong>{dist_label}</strong> distance</div>
-      <div class="chip"><strong>{time_label}</strong> est. time</div>
-      <div class="chip"><strong>{profile}</strong> profile</div>
-      <div class="chip"><strong>{"Round trip" if round_trip else "One way"}</strong></div>
-      <div class="chip"><strong>{len(ordered)}</strong> stops</div>
+      {chips}
+      <div class="chip"><strong>{len(ordered)}</strong> {point_word}</div>
     </div>
   </header>
   <div class="layout">
     <aside class="panel">
-      <h2>Visit order</h2>
-      <p class="hint">Click a stop to fly to it on the map.</p>
+      <h2>{panel_title}</h2>
+      <p class="hint">{hint}</p>
       <ol class="stops" id="stopList"></ol>
     </aside>
     <div class="map-card">
       <div class="toolbar">
-        <button type="button" id="btnFit">Fit route</button>
-        <button type="button" id="btnToggleRoute">Toggle route</button>
+        <button type="button" id="btnFit">Fit all</button>
+        <button type="button" id="btnToggleRoute" style="display:{route_btn_display}">Toggle route</button>
         <button type="button" id="btnToggleLabels">Toggle labels</button>
       </div>
       <div id="map"></div>
-      <div class="legend" id="legend">
-        <h3>Legend</h3>
-        <div class="legend-row"><span class="swatch" style="background:#107c10"></span> Start (1)</div>
-        <div class="legend-row"><span class="swatch" style="background:#0078d4"></span> Stop (2…n)</div>
-        <div class="legend-row"><span class="swatch" style="background:#d83b01"></span> Final stop</div>
-        <div class="legend-row"><span class="swatch line" style="background:#0f6cbd"></span> Route path</div>
-      </div>
+      <div class="legend" id="legend"><h3>Legend</h3></div>
     </div>
   </div>
   <p class="foot">
-    Map data &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors
-    · Interactive map via <a href="https://leafletjs.com/" target="_blank" rel="noopener">Leaflet</a>
-    · Numbered markers show visit sequence
+    Map data &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>
+    · <a href="https://leafletjs.com/" target="_blank" rel="noopener">Leaflet</a>
   </p>
 </div>
 <script>
@@ -906,147 +907,112 @@ const STOPS = {stops_js};
 const GEOM = {geom_js};
 const ROUND = {str(round_trip).lower()};
 const SOURCE = {json.dumps(routing_source)};
+const KIND = {json.dumps(kind)};
+const IS_ROUTE = KIND === 'route';
 const markers = [];
 let routeLayer = null;
 let labelsOn = true;
 
-function colour(i) {{
-  if (i === 0) return '#107c10';
-  if (i === STOPS.length - 1 && !ROUND) return '#d83b01';
-  if (i === STOPS.length - 1 && ROUND) return '#0078d4';
-  return '#0078d4';
-}}
-
-function badgeClass(i) {{
-  if (i === 0) return 'badge start';
-  if (i === STOPS.length - 1 && !ROUND) return 'badge end';
-  return 'badge';
-}}
-
-function numberedIcon(n, fill) {{
+function markerIcon(s) {{
+  const useEmoji = s.icon && s.icon !== 'pin';
+  const inner = useEmoji ? s.emoji : String(s.n);
+  const cls = useEmoji ? 'marker-pin icon' : 'marker-pin';
   return L.divIcon({{
     className: '',
-    html: `<div class="marker-pin" style="background:${{fill}}">${{n}}</div>`,
-    iconSize: [30, 30],
-    iconAnchor: [15, 15],
-    popupAnchor: [0, -16]
+    html: `<div class="${{cls}}" style="background:${{s.color}}">${{inner}}</div>`,
+    iconSize: [34, 34], iconAnchor: [17, 17], popupAnchor: [0, -18]
   }});
 }}
 
 const list = document.getElementById('stopList');
+const legend = document.getElementById('legend');
+const seenIcons = new Map();
 STOPS.forEach((s, i) => {{
   const li = document.createElement('li');
   li.dataset.idx = String(i);
-  li.innerHTML = `<span class="${{badgeClass(i)}}">${{s.n}}</span>
+  const badge = (s.icon && s.icon !== 'pin') ? s.emoji : String(s.n);
+  li.innerHTML = `<span class="badge" style="background:${{s.color}}">${{badge}}</span>
     <div><strong>${{s.n}}. ${{s.name}}</strong>
-    <div class="meta">${{s.display || (s.lat.toFixed(5) + ', ' + s.lon.toFixed(5))}}</div></div>`;
+    ${{s.value ? `<div class="val">${{s.value}}</div>` : ''}}
+    <div class="meta">${{s.display || (s.lat.toFixed(5)+', '+s.lon.toFixed(5))}}</div></div>`;
   li.addEventListener('click', () => focusStop(i));
   list.appendChild(li);
+  if (!seenIcons.has(s.icon)) seenIcons.set(s.icon, s);
 }});
-if (ROUND && STOPS.length) {{
+if (IS_ROUTE && ROUND && STOPS.length) {{
   const li = document.createElement('li');
-  li.innerHTML = `<span class="badge ret">↩</span>
-    <div><strong>Return to start</strong>
-    <div class="meta">Back to 1. ${{STOPS[0].name}}</div></div>`;
+  li.innerHTML = `<span class="badge" style="background:#8764b8">↩</span>
+    <div><strong>Return to start</strong><div class="meta">Back to 1. ${{STOPS[0].name}}</div></div>`;
   li.addEventListener('click', () => focusStop(0));
   list.appendChild(li);
-  // Update legend note for round trip
-  const leg = document.getElementById('legend');
-  const row = document.createElement('div');
-  row.className = 'legend-row';
-  row.innerHTML = '<span class="swatch" style="background:#8764b8"></span> Return to start';
-  leg.appendChild(row);
+}}
+if (IS_ROUTE) {{
+  legend.innerHTML += `
+    <div class="legend-row"><span class="swatch" style="background:#107c10"></span> Start</div>
+    <div class="legend-row"><span class="swatch" style="background:#0078d4"></span> Stop</div>
+    <div class="legend-row"><span class="swatch line" style="background:#0f6cbd"></span> Route</div>`;
+}} else {{
+  seenIcons.forEach((s) => {{
+    legend.innerHTML += `<div class="legend-row"><span class="swatch" style="background:${{s.color}}">${{s.emoji}}</span> ${{s.icon}}</div>`;
+  }});
 }}
 
-const map = L.map('map', {{ zoomControl: true, scrollWheelZoom: true }});
+const map = L.map('map', {{ zoomControl: true }});
 L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
-  maxZoom: 19,
-  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+  maxZoom: 19, attribution: '&copy; OpenStreetMap'
 }}).addTo(map);
 
 const latlngs = (GEOM.coordinates || []).map(c => [c[1], c[0]]);
-if (latlngs.length > 1) {{
+if (IS_ROUTE && latlngs.length > 1) {{
   routeLayer = L.polyline(latlngs, {{
-    color: '#0f6cbd',
-    weight: SOURCE === 'osrm' ? 6 : 5,
-    opacity: 0.9,
-    dashArray: SOURCE === 'osrm' ? null : '10 8',
-    lineJoin: 'round',
-    lineCap: 'round'
+    color: '#0f6cbd', weight: 6, opacity: 0.9,
+    dashArray: SOURCE === 'osrm' ? null : '10 8'
   }}).addTo(map);
-  routeLayer.bindPopup(SOURCE === 'osrm'
-    ? '<strong>Road route</strong><br/>OSRM / OpenStreetMap'
-    : '<strong>Approximate path</strong><br/>Offline estimate (not turn-by-turn)');
 }}
 
-const group = L.featureGroup();
 STOPS.forEach((s, i) => {{
-  const fill = colour(i);
-  const m = L.marker([s.lat, s.lon], {{
-    icon: numberedIcon(s.n, fill),
-    title: s.n + '. ' + s.name,
-    riseOnHover: true
-  }});
-  m.bindPopup(
-    `<span class="popup-n" style="background:${{fill}}">${{s.n}}</span>` +
-    `<strong>${{s.name}}</strong><br/>` +
-    `<span style="color:#605e5c">${{s.display || (s.lat.toFixed(5) + ', ' + s.lon.toFixed(5))}}</span>`
-  );
-  if (labelsOn) {{
-    m.bindTooltip(s.n + '. ' + s.name, {{
-      permanent: false, direction: 'top', offset: [0, -12]
-    }});
-  }}
+  const m = L.marker([s.lat, s.lon], {{ icon: markerIcon(s), riseOnHover: true }});
+  const valHtml = s.value ? `<div style="margin-top:4px"><strong>${{s.value}}</strong></div>` : '';
+  m.bindPopup(`<strong>${{s.n}}. ${{s.name}}</strong>${{valHtml}}
+    <div style="color:#605e5c;margin-top:4px">${{s.display || ''}}</div>`);
+  m.bindTooltip(s.value ? (s.name + ' · ' + s.value) : s.name, {{ direction: 'top', offset: [0, -14] }});
   m.on('click', () => highlightList(i));
   m.addTo(map);
-  group.addLayer(m);
   markers.push(m);
 }});
 
 function fitAll() {{
-  const layers = [];
+  const layers = [...markers];
   if (routeLayer) layers.push(routeLayer);
-  markers.forEach(m => layers.push(m));
-  if (layers.length) {{
-    const g = L.featureGroup(layers);
-    map.fitBounds(g.getBounds().pad(0.18));
-  }} else {{
-    map.setView([-33.87, 151.21], 11);
-  }}
+  if (layers.length) map.fitBounds(L.featureGroup(layers).getBounds().pad(0.18));
+  else map.setView([-33.87, 151.21], 11);
 }}
-
 function highlightList(i) {{
   document.querySelectorAll('#stopList li').forEach(el => el.classList.remove('active'));
   const el = document.querySelector('#stopList li[data-idx="' + i + '"]');
   if (el) el.classList.add('active');
 }}
-
 function focusStop(i) {{
-  const m = markers[i];
-  if (!m) return;
+  const m = markers[i]; if (!m) return;
   highlightList(i);
-  map.flyTo(m.getLatLng(), Math.max(map.getZoom(), 14), {{ duration: 0.7 }});
+  map.flyTo(m.getLatLng(), Math.max(map.getZoom(), 13), {{ duration: 0.7 }});
   m.openPopup();
 }}
-
 document.getElementById('btnFit').onclick = fitAll;
 document.getElementById('btnToggleRoute').onclick = () => {{
   if (!routeLayer) return;
-  if (map.hasLayer(routeLayer)) map.removeLayer(routeLayer);
-  else routeLayer.addTo(map);
+  if (map.hasLayer(routeLayer)) map.removeLayer(routeLayer); else routeLayer.addTo(map);
 }};
 document.getElementById('btnToggleLabels').onclick = () => {{
   labelsOn = !labelsOn;
   markers.forEach((m, i) => {{
     m.unbindTooltip();
     if (labelsOn) {{
-      m.bindTooltip(STOPS[i].n + '. ' + STOPS[i].name, {{
-        permanent: false, direction: 'top', offset: [0, -12]
-      }});
+      const s = STOPS[i];
+      m.bindTooltip(s.value ? s.name + ' · ' + s.value : s.name, {{ direction: 'top', offset: [0, -14] }});
     }}
   }});
 }};
-
 fitAll();
 </script>
 </body>
@@ -1070,19 +1036,22 @@ def save_geojson(
     duration_s: float,
     profile: str,
 ) -> str:
-    features: list[dict[str, Any]] = [
-        {
-            "type": "Feature",
-            "geometry": geometry,
-            "properties": {
-                "name": title,
-                "profile": profile,
-                "distance_m": distance_m,
-                "duration_s": duration_s,
-                "round_trip": round_trip,
-            },
-        }
-    ]
+    features: list[dict[str, Any]] = []
+    coords = (geometry or {}).get("coordinates") or []
+    if coords:
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": geometry,
+                "properties": {
+                    "name": title,
+                    "profile": profile,
+                    "distance_m": distance_m,
+                    "duration_s": duration_s,
+                    "round_trip": round_trip,
+                },
+            }
+        )
     for i, s in enumerate(ordered, start=1):
         features.append(
             {
@@ -1095,6 +1064,8 @@ def save_geojson(
                     "name": s["name"],
                     "sequence": i,
                     "address": s.get("display_name") or s.get("address") or "",
+                    "value": s.get("value"),
+                    "icon": s.get("icon"),
                 },
             }
         )
@@ -1128,20 +1099,25 @@ def save_kml(
         + (" | round trip" if round_trip else "")
     )
 
-    # Route line
-    route_pm = ET.SubElement(doc, f"{{{kml_ns}}}Placemark")
-    ET.SubElement(route_pm, f"{{{kml_ns}}}name").text = "Route"
-    line = ET.SubElement(route_pm, f"{{{kml_ns}}}LineString")
-    ET.SubElement(line, f"{{{kml_ns}}}tessellate").text = "1"
-    coords = geometry.get("coordinates") or []
-    ET.SubElement(line, f"{{{kml_ns}}}coordinates").text = " ".join(
-        f"{c[0]},{c[1]},0" for c in coords
-    )
+    coords = (geometry or {}).get("coordinates") or []
+    if coords:
+        route_pm = ET.SubElement(doc, f"{{{kml_ns}}}Placemark")
+        ET.SubElement(route_pm, f"{{{kml_ns}}}name").text = "Route"
+        line = ET.SubElement(route_pm, f"{{{kml_ns}}}LineString")
+        ET.SubElement(line, f"{{{kml_ns}}}tessellate").text = "1"
+        ET.SubElement(line, f"{{{kml_ns}}}coordinates").text = " ".join(
+            f"{c[0]},{c[1]},0" for c in coords
+        )
 
     for i, s in enumerate(ordered, start=1):
         pm = ET.SubElement(doc, f"{{{kml_ns}}}Placemark")
         ET.SubElement(pm, f"{{{kml_ns}}}name").text = f"{i}. {s['name']}"
-        desc = s.get("display_name") or s.get("address") or ""
+        bits = [
+            s.get("display_name") or s.get("address") or "",
+            f"value={s['value']}" if s.get("value") else "",
+            f"icon={s['icon']}" if s.get("icon") else "",
+        ]
+        desc = " | ".join(b for b in bits if b)
         if desc:
             ET.SubElement(pm, f"{{{kml_ns}}}description").text = desc
         point = ET.SubElement(pm, f"{{{kml_ns}}}Point")
@@ -1156,11 +1132,16 @@ def save_kml(
 
 def save_stops_csv(ordered: Sequence[Mapping[str, Any]], out: str) -> str:
     with open(out, "w", encoding="utf-8") as fh:
-        fh.write("sequence,name,lat,lon,address\n")
+        fh.write("sequence,name,lat,lon,location,value,icon\n")
         for i, s in enumerate(ordered, start=1):
-            addr = (s.get("display_name") or s.get("address") or "").replace('"', "'")
+            loc = (
+                s.get("display_name") or s.get("location") or s.get("address") or ""
+            ).replace('"', "'")
+            val = str(s.get("value") or "").replace('"', "'")
+            icon = str(s.get("icon") or "pin")
             fh.write(
-                f'{i},"{s["name"]}",{s["lat"]:.6f},{s["lon"]:.6f},"{addr}"\n'
+                f'{i},"{s["name"]}",{s["lat"]:.6f},{s["lon"]:.6f},'
+                f'"{loc}","{val}","{icon}"\n'
             )
     return out
 
@@ -1182,13 +1163,33 @@ def _as_payload(source: Any) -> dict[str, Any]:
     return data
 
 
-def plan_route(data: Mapping[str, Any] | str) -> dict[str, Any]:
-    """Plan, optimise, and export a route. Returns summary paths + markdown."""
-    payload = _as_payload(data)
-    stops_in = payload.get("stops")
-    if not isinstance(stops_in, list) or not stops_in:
-        raise ValueError("`stops` must be a non-empty list of stop objects.")
+def _detect_kind(payload: Mapping[str, Any]) -> str:
+    kind = str(payload.get("kind", "auto")).lower()
+    if kind in ("map", "markers", "marker"):
+        return "map"
+    if kind == "route":
+        return "route"
+    if payload.get("optimize") is False or payload.get("route") is False:
+        return "map"
+    if payload.get("optimize") is True or payload.get("route") is True:
+        return "route"
+    if payload.get("round_trip") is True:
+        return "route"
+    if payload.get("points") and not payload.get("stops"):
+        return "map"
+    return "map"
 
+
+def generate(data: Mapping[str, Any] | str) -> dict[str, Any]:
+    """Generate a marker map and/or optimised route. Returns paths + markdown."""
+    payload = _as_payload(data)
+    points_in = payload.get("points") or payload.get("stops") or payload.get("locations")
+    if not isinstance(points_in, list) or not points_in:
+        raise ValueError(
+            "`points` (or `stops` / `locations`) must be a non-empty list."
+        )
+
+    kind = _detect_kind(payload)
     profile = str(payload.get("profile", "driving")).lower()
     if profile not in PROFILES:
         raise ValueError(f"`profile` must be one of {PROFILES}.")
@@ -1197,59 +1198,79 @@ def plan_route(data: Mapping[str, Any] | str) -> dict[str, Any]:
     if mode not in MODES:
         raise ValueError(f"`mode` must be one of {MODES}.")
 
-    round_trip = bool(payload.get("round_trip", True))
-    title = str(payload.get("title") or payload.get("chart_title") or "Optimised route")
-    prefix = str(payload.get("out_prefix", "route"))
+    round_trip = bool(payload.get("round_trip", True if kind == "route" else False))
+    title = str(
+        payload.get("title")
+        or payload.get("chart_title")
+        or ("Optimised route" if kind == "route" else "Map")
+    )
+    prefix = str(payload.get("out_prefix", "map" if kind == "map" else "route"))
     lookup_path = payload.get("place_lookup_path")
 
-    resolved, warnings = resolve_stops(
-        stops_in, mode=mode, place_lookup_path=lookup_path
+    resolved, warnings = resolve_points(
+        points_in,
+        mode=mode,
+        place_lookup_path=lookup_path,
+        min_count=2 if kind == "route" else 1,
     )
 
-    start = payload.get("start", 0)
-    if isinstance(start, str):
-        names = [s["name"].lower() for s in resolved]
-        if start.lower() not in names:
-            raise ValueError(f"start stop {start!r} not found in stop names.")
-        start_idx = names.index(start.lower())
-    else:
-        start_idx = int(start)
+    routing_source = "none"
+    ordered = list(resolved)
+    route: dict[str, Any] = {
+        "distance_m": 0.0,
+        "duration_s": 0.0,
+        "geometry": {"type": "LineString", "coordinates": []},
+    }
 
-    routing_source = "haversine_offline"
-    durations: list[list[float]]
-    route: dict[str, Any]
+    if kind == "route":
+        start = payload.get("start", 0)
+        if isinstance(start, str):
+            names = [s["name"].lower() for s in resolved]
+            if start.lower() not in names:
+                raise ValueError(f"start stop {start!r} not found in stop names.")
+            start_idx = names.index(start.lower())
+        else:
+            start_idx = int(start)
 
-    if mode in ("auto", "online"):
-        try:
-            durations, _distances = osrm_table(resolved, profile=profile)
-            order_idx = optimise_order(durations, start=start_idx, round_trip=round_trip)
-            ordered = [resolved[i] for i in order_idx]
-            route_stops = ordered + (
-                [ordered[0]] if round_trip and len(ordered) > 1 else []
-            )
-            route = osrm_route(route_stops, profile=profile)
-            routing_source = "osrm"
-        except Exception as e:
-            if mode == "online":
-                raise
-            warnings.append(f"Live OSRM unavailable ({e}); using offline haversine.")
+        if mode in ("auto", "online"):
+            try:
+                durations, _distances = osrm_table(resolved, profile=profile)
+                order_idx = optimise_order(
+                    durations, start=start_idx, round_trip=round_trip
+                )
+                ordered = [resolved[i] for i in order_idx]
+                route_stops = ordered + (
+                    [ordered[0]] if round_trip and len(ordered) > 1 else []
+                )
+                route = osrm_route(route_stops, profile=profile)
+                routing_source = "osrm"
+            except Exception as e:
+                if mode == "online":
+                    raise
+                warnings.append(
+                    f"Live OSRM unavailable ({e}); using offline haversine."
+                )
+                durations, _distances = offline_table(resolved, profile=profile)
+                order_idx = optimise_order(
+                    durations, start=start_idx, round_trip=round_trip
+                )
+                ordered = [resolved[i] for i in order_idx]
+                route_stops = ordered + (
+                    [ordered[0]] if round_trip and len(ordered) > 1 else []
+                )
+                route = offline_route(route_stops, profile=profile)
+                routing_source = "haversine_offline"
+        else:
             durations, _distances = offline_table(resolved, profile=profile)
-            order_idx = optimise_order(durations, start=start_idx, round_trip=round_trip)
+            order_idx = optimise_order(
+                durations, start=start_idx, round_trip=round_trip
+            )
             ordered = [resolved[i] for i in order_idx]
             route_stops = ordered + (
                 [ordered[0]] if round_trip and len(ordered) > 1 else []
             )
             route = offline_route(route_stops, profile=profile)
             routing_source = "haversine_offline"
-    else:
-        durations, _distances = offline_table(resolved, profile=profile)
-        order_idx = optimise_order(durations, start=start_idx, round_trip=round_trip)
-        ordered = [resolved[i] for i in order_idx]
-        route_stops = ordered + (
-            [ordered[0]] if round_trip and len(ordered) > 1 else []
-        )
-        route = offline_route(route_stops, profile=profile)
-        routing_source = "haversine_offline"
 
     chart_path = str(payload.get("chart_path", f"{prefix}_map.png"))
     save_png(
@@ -1260,46 +1281,54 @@ def plan_route(data: Mapping[str, Any] | str) -> dict[str, Any]:
         round_trip=round_trip,
         distance_m=route["distance_m"],
         duration_s=route["duration_s"],
+        kind=kind,
     )
 
-    csv_path = str(payload.get("csv_path", f"{prefix}_stops.csv"))
+    csv_path = str(payload.get("csv_path", f"{prefix}_points.csv"))
     save_stops_csv(ordered, csv_path)
 
-    md = markdown_route(
+    md = markdown_summary(
         ordered,
+        kind=kind,
+        chart_path=os.path.abspath(chart_path),
         distance_m=route["distance_m"],
         duration_s=route["duration_s"],
         round_trip=round_trip,
         profile=profile,
-        chart_path=os.path.abspath(chart_path),
         routing_source=routing_source,
     )
     md_path = str(payload.get("markdown_path", f"{prefix}_summary.md"))
     with open(md_path, "w", encoding="utf-8") as fh:
         fh.write(md)
 
-    method = (
-        "OSRM + nearest-neighbour + 2-opt"
-        if routing_source == "osrm"
-        else "haversine offline + nearest-neighbour + 2-opt"
-    )
-    attribution = (
-        "(c) OpenStreetMap contributors | Routing via OSRM"
-        if routing_source == "osrm"
-        else "Offline estimate (haversine x road factor) | place_lookup / supplied coords"
-    )
+    if kind == "route":
+        method = (
+            "OSRM + nearest-neighbour + 2-opt"
+            if routing_source == "osrm"
+            else "haversine offline + nearest-neighbour + 2-opt"
+        )
+        attribution = (
+            "(c) OpenStreetMap contributors | Routing via OSRM"
+            if routing_source == "osrm"
+            else "Offline estimate | place_lookup / supplied coords"
+        )
+    else:
+        method = "marker map (no routing)"
+        attribution = "(c) OpenStreetMap basemap in HTML | marker plot"
 
     result: dict[str, Any] = {
         "title": title,
+        "kind": kind,
         "profile": profile,
         "mode": mode,
         "routing_source": routing_source,
-        "round_trip": round_trip,
+        "round_trip": round_trip if kind == "route" else False,
         "distance_m": route["distance_m"],
         "distance_label": _fmt_km(route["distance_m"]),
         "duration_s": route["duration_s"],
         "duration_label": _fmt_duration(route["duration_s"]),
         "stop_order": [s["name"] for s in ordered],
+        "points": ordered,
         "stops": ordered,
         "chart_path": os.path.abspath(chart_path),
         "csv_path": os.path.abspath(csv_path),
@@ -1322,6 +1351,7 @@ def plan_route(data: Mapping[str, Any] | str) -> dict[str, Any]:
             duration_s=route["duration_s"],
             profile=profile,
             routing_source=routing_source,
+            kind=kind,
         )
         result["html_path"] = os.path.abspath(html_path)
 
@@ -1356,15 +1386,25 @@ def plan_route(data: Mapping[str, Any] | str) -> dict[str, Any]:
     return result
 
 
+def plan_route(data: Mapping[str, Any] | str) -> dict[str, Any]:
+    """Backward-compatible alias — forces route kind unless payload sets kind=map."""
+    payload = _as_payload(data)
+    if "kind" not in payload and payload.get("optimize") is not False:
+        payload = dict(payload)
+        payload.setdefault("kind", "route")
+    return generate(payload)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        description="Optimise a multi-stop route with OSM/OSRM and export map + data.",
+        description="Generate marker maps or optimised routes (OSM / offline).",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    p.add_argument("--payload", required=True, help="Path to JSON payload with stops.")
+    p.add_argument("--payload", required=True, help="Path to JSON payload.")
+    p.add_argument("--kind", choices=["auto", "map", "route"], default=None)
     p.add_argument("--mode", choices=list(MODES), default=None,
-                   help="auto (default) | offline (sandbox) | online")
+                   help="auto | offline (sandbox) | online")
     p.add_argument("--profile", choices=list(PROFILES), default=None)
     p.add_argument("--round-trip", dest="round_trip", action="store_true", default=None)
     p.add_argument("--one-way", dest="round_trip", action="store_false")
@@ -1380,6 +1420,8 @@ def _build_parser() -> argparse.ArgumentParser:
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = _build_parser().parse_args(argv)
     data = _as_payload(args.payload)
+    if args.kind is not None:
+        data["kind"] = args.kind
     if args.mode is not None:
         data["mode"] = args.mode
     if args.profile is not None:
@@ -1397,10 +1439,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.kml:
         data["kml"] = True
 
-    result = plan_route(data)
+    result = generate(data)
 
     print(result["markdown"])
     print()
+    print(f"Kind:     {result.get('kind')}")
     print(f"Mode:     {result.get('mode')} ({result.get('routing_source')})")
     print(f"PNG:      {result['chart_path']}")
     print(f"CSV:      {result['csv_path']}")
