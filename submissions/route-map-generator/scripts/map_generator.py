@@ -453,18 +453,21 @@ def markdown_summary(
         ]
         return "\n".join(lines)
 
-    method = "offline estimate (haversine x road factor; not turn-by-turn)"
+    method = "offline straight-line estimate (not road geometry)"
     foot = (
-        "Static lat/lon plot (PNG) | offline distance estimate | "
-        "HTML draws a road-following route via OSRM in the browser"
+        "**PNG** = straight-line sketch between stops (approximate distance).  \n"
+        "**HTML** = actual road-following route on OpenStreetMap (via OSRM in the browser)."
     )
     lines = [
         "### Optimised route",
         "",
-        f"**Profile:** {profile} | **Distance:** {_fmt_km(distance_m)} | "
-        f"**Est. time:** {_fmt_duration(duration_s)}"
+        f"**Profile:** {profile} | **Distance (PNG est.):** {_fmt_km(distance_m)} | "
+        f"**Est. time (PNG):** {_fmt_duration(duration_s)}"
         + (" | **Round trip**" if round_trip else "")
         + f" | **Method:** {method}",
+        "",
+        "> **Route display:** The PNG uses **straight lines** between stops. "
+        "Open the **HTML** export for the **real road path** (the line follows streets).",
         "",
         "| # | Stop | Location |",
         "| ---: | --- | --- |",
@@ -551,7 +554,7 @@ def save_png(
         ax.set_ylim(min(ys) - pad_y, max(ys) + pad_y)
 
     if kind == "route":
-        subtitle = f"{_fmt_km(distance_m)} | {_fmt_duration(duration_s)}"
+        subtitle = f"{_fmt_km(distance_m)} | {_fmt_duration(duration_s)} | straight-line estimate"
         subtitle += " | round trip" if round_trip else ""
     else:
         subtitle = f"{len(ordered)} locations | marker map"
@@ -584,8 +587,13 @@ def save_png(
     for spine in ax.spines.values():
         spine.set_color("#d2d0ce")
     # PNG is a matplotlib coordinate plot — not an OSM tile basemap.
+    footer = (
+        "Straight-line sketch (not road route)"
+        if kind == "route"
+        else "Static plot (lat/lon)"
+    )
     ax.text(
-        0.01, 0.01, "Static plot (lat/lon)",
+        0.01, 0.01, footer,
         transform=ax.transAxes, fontsize=7, color="#8a8886",
         ha="left", va="bottom",
     )
@@ -651,7 +659,10 @@ def save_html(
             f'<div class="chip" id="chipRouteSrc"><strong>OSRM</strong> road path</div>'
         )
         panel_title = "Visit order"
-        hint = "Click a stop to fly to it on the map. Route follows roads via OSRM when online."
+        hint = (
+            "Click a stop to fly to it. "
+            "Blue line = real road route (OSRM). Falls back to straight lines if offline."
+        )
         route_btn_display = "inline-block"
         point_word = "stops"
     else:
@@ -1219,7 +1230,9 @@ def generate(data: Mapping[str, Any] | str) -> dict[str, Any]:
 
     if kind == "route":
         method = "haversine offline + nearest-neighbour + 2-opt"
-        attribution = "Offline estimate | lat/lon from user/agent or place_lookup"
+        attribution = (
+            "PNG: straight-line sketch | HTML: road-following route via OSRM (browser)"
+        )
     else:
         method = "marker map (no routing)"
         attribution = "PNG is a static lat/lon plot; OSM tiles only in the HTML export"

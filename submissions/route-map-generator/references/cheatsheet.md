@@ -11,8 +11,10 @@ Sandbox: **no external APIs** from Python. Resolve lat/lon via user input,
 or **agent web search**, then pass them in.
 
 HTML routes: when opened in a browser, the page calls the public **OSRM** demo
-API and draws a road-following polyline (falls back to the offline estimate if
-unreachable).
+API and draws a **road-following** polyline (real streets).
+
+- **PNG** → straight lines between stops (approximate)
+- **HTML** → actual road path (falls back to straight lines if OSRM is offline)
 
 ## Payload
 

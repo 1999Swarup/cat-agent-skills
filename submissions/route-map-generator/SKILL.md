@@ -82,9 +82,11 @@ result = generate({
 print(result["markdown"])
 ```
 
-5. **Reply.** Paste `result["markdown"]`. Note that PNG distances/times are
-   offline estimates (haversine × road factor). The HTML export draws a real
-   road path via OSRM when opened online.
+5. **Reply.** Paste `result["markdown"]`. Tell the user clearly:
+   - **PNG** = straight-line sketch between stops (approximate)
+   - **HTML** = actual road-following route (opens in browser; needs network
+     for OSRM). Always enable `html: true` for route requests so they get the
+     real path.
 
 ## Icons
 

@@ -17,6 +17,15 @@ in the same conversation (e.g. Dataverse / CRM / list query), or via agent
 3. Optional **GeoJSON** / **KML**  
 4. CSV of points  
 
+### PNG vs HTML routes (important)
+
+| Output | What the path looks like |
+| --- | --- |
+| **PNG** | **Straight lines** between stops — a quick sketch + approximate distance |
+| **HTML** | **Actual road route** — follows streets via OSRM when the file is opened online |
+
+If OSRM is unreachable, the HTML falls back to the same straight-line estimate.
+
 ## Two kinds
 
 | Kind | Use when | Output |
