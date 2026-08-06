@@ -65,29 +65,29 @@ KINDS = ("auto", "map", "route")
 _SPEED_MPS = {"driving": 35_000 / 3600, "walking": 5_000 / 3600, "cycling": 15_000 / 3600}
 _ROAD_FACTOR = {"driving": 1.35, "walking": 1.15, "cycling": 1.25}
 
-# Icon catalogue — emoji for HTML, short label + colour for PNG.
+# Icon catalogue — emoji for HTML/PNG, short label + colour + display name.
 ICONS: dict[str, dict[str, str]] = {
-    "pin": {"emoji": "📍", "label": "PIN", "color": "#0078d4"},
-    "sunny": {"emoji": "☀️", "label": "SUN", "color": "#f9a825"},
-    "partly-cloudy": {"emoji": "⛅", "label": "PC", "color": "#90a4ae"},
-    "cloudy": {"emoji": "☁️", "label": "CLD", "color": "#78909c"},
-    "rain": {"emoji": "🌧️", "label": "RAIN", "color": "#1565c0"},
-    "storm": {"emoji": "⛈️", "label": "STM", "color": "#4527a0"},
-    "snow": {"emoji": "❄️", "label": "SNOW", "color": "#4fc3f7"},
-    "fog": {"emoji": "🌫️", "label": "FOG", "color": "#9e9e9e"},
-    "wind": {"emoji": "💨", "label": "WIND", "color": "#00897b"},
-    "hot": {"emoji": "🔥", "label": "HOT", "color": "#e53935"},
-    "cold": {"emoji": "🥶", "label": "COLD", "color": "#039be5"},
-    "office": {"emoji": "🏢", "label": "OFF", "color": "#5c6bc0"},
-    "home": {"emoji": "🏠", "label": "HOME", "color": "#43a047"},
-    "factory": {"emoji": "🏭", "label": "FAC", "color": "#6d4c41"},
-    "hospital": {"emoji": "🏥", "label": "HOS", "color": "#e53935"},
-    "school": {"emoji": "🏫", "label": "SCH", "color": "#fb8c00"},
-    "warning": {"emoji": "⚠️", "label": "WRN", "color": "#f9a825"},
-    "check": {"emoji": "✅", "label": "OK", "color": "#2e7d32"},
-    "star": {"emoji": "⭐", "label": "★", "color": "#fbc02d"},
-    "shop": {"emoji": "🛒", "label": "SHOP", "color": "#00838f"},
-    "truck": {"emoji": "🚚", "label": "TRK", "color": "#546e7a"},
+    "pin": {"emoji": "📍", "label": "PIN", "name": "Pin", "color": "#0078d4"},
+    "sunny": {"emoji": "☀️", "label": "SUN", "name": "Sunny", "color": "#f9a825"},
+    "partly-cloudy": {"emoji": "⛅", "label": "PC", "name": "Partly cloudy", "color": "#607d8b"},
+    "cloudy": {"emoji": "☁️", "label": "CLD", "name": "Cloudy", "color": "#546e7a"},
+    "rain": {"emoji": "🌧️", "label": "RAIN", "name": "Rain", "color": "#1565c0"},
+    "storm": {"emoji": "⛈️", "label": "STM", "name": "Storm", "color": "#4527a0"},
+    "snow": {"emoji": "❄️", "label": "SNOW", "name": "Snow", "color": "#0288d1"},
+    "fog": {"emoji": "🌫️", "label": "FOG", "name": "Fog", "color": "#757575"},
+    "wind": {"emoji": "💨", "label": "WIND", "name": "Windy", "color": "#00897b"},
+    "hot": {"emoji": "🔥", "label": "HOT", "name": "Hot", "color": "#e53935"},
+    "cold": {"emoji": "🥶", "label": "COLD", "name": "Cold", "color": "#0277bd"},
+    "office": {"emoji": "🏢", "label": "OFF", "name": "Office", "color": "#5c6bc0"},
+    "home": {"emoji": "🏠", "label": "HOME", "name": "Home", "color": "#43a047"},
+    "factory": {"emoji": "🏭", "label": "FAC", "name": "Factory", "color": "#6d4c41"},
+    "hospital": {"emoji": "🏥", "label": "HOS", "name": "Hospital", "color": "#e53935"},
+    "school": {"emoji": "🏫", "label": "SCH", "name": "School", "color": "#ef6c00"},
+    "warning": {"emoji": "⚠️", "label": "WRN", "name": "Warning", "color": "#f9a825"},
+    "check": {"emoji": "✅", "label": "OK", "name": "OK", "color": "#2e7d32"},
+    "star": {"emoji": "⭐", "label": "★", "name": "Star", "color": "#fbc02d"},
+    "shop": {"emoji": "🛒", "label": "SHOP", "name": "Shop", "color": "#00838f"},
+    "truck": {"emoji": "🚚", "label": "TRK", "name": "Truck", "color": "#546e7a"},
 }
 
 
@@ -99,6 +99,7 @@ def icon_meta(icon: Optional[str]) -> dict[str, str]:
         "cloud": "cloudy",
         "clouds": "cloudy",
         "partlycloudy": "partly-cloudy",
+        "partly": "partly-cloudy",
         "shower": "rain",
         "showers": "rain",
         "thunder": "storm",
@@ -110,7 +111,146 @@ def icon_meta(icon: Optional[str]) -> dict[str, str]:
         "location": "pin",
     }
     key = aliases.get(key, key)
-    return dict(ICONS.get(key, ICONS["pin"]))
+    meta = dict(ICONS.get(key, ICONS["pin"]))
+    meta.setdefault("name", meta.get("label", key))
+    return meta
+
+
+def _emoji_fontproperties():
+    """Prefer an emoji-capable font when available (Windows / macOS / Noto)."""
+    from matplotlib import font_manager
+
+    candidates = (
+        "Segoe UI Emoji",
+        "Segoe UI Symbol",
+        "Apple Color Emoji",
+        "Noto Color Emoji",
+        "Noto Emoji",
+        "DejaVu Sans",
+    )
+    available = {f.name for f in font_manager.fontManager.ttflist}
+    for name in candidates:
+        if name in available:
+            return font_manager.FontProperties(family=name)
+    return font_manager.FontProperties()
+
+
+def _spread_label_offsets(
+    lons: Sequence[float],
+    lats: Sequence[float],
+) -> list[tuple[float, float]]:
+    """Place labels away from neighbours; fan out dense clusters."""
+    n = len(lons)
+    if n == 0:
+        return []
+    if n == 1:
+        return [(28.0, 16.0)]
+
+    lon_span = max(max(lons) - min(lons), 1e-6)
+    lat_span = max(max(lats) - min(lats), 1e-6)
+    cx = sum(lons) / n
+    cy = sum(lats) / n
+
+    # Local density = count of neighbours within ~12% of map span.
+    density = [0] * n
+    for i in range(n):
+        for j in range(n):
+            if i == j:
+                continue
+            d = math.hypot(
+                (lons[i] - lons[j]) / lon_span,
+                (lats[i] - lats[j]) / lat_span,
+            )
+            if d < 0.12:
+                density[i] += 1
+
+    offsets: list[list[float]] = []
+    for i in range(n):
+        # Prefer direction away from map centroid and nearest neighbour.
+        vx = (lons[i] - cx) / lon_span
+        vy = (lats[i] - cy) / lat_span
+        nearest_d = 1e9
+        for j in range(n):
+            if i == j:
+                continue
+            dx = (lons[i] - lons[j]) / lon_span
+            dy = (lats[i] - lats[j]) / lat_span
+            d = math.hypot(dx, dy)
+            if d < nearest_d:
+                nearest_d = d
+                vx += dx * 1.4
+                vy += dy * 1.4
+        norm = math.hypot(vx, vy) or 1.0
+        vx, vy = vx / norm, vy / norm
+        radius = 26.0 + density[i] * 14.0
+        offsets.append([vx * radius, vy * radius])
+
+    # Connected clusters of close markers → fan labels around the cluster.
+    parent = list(range(n))
+
+    def find(a: int) -> int:
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    def union(a: int, b: int) -> None:
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[rb] = ra
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            d = math.hypot(
+                (lons[i] - lons[j]) / lon_span,
+                (lats[i] - lats[j]) / lat_span,
+            )
+            if d < 0.10:
+                union(i, j)
+
+    clusters: dict[int, list[int]] = {}
+    for i in range(n):
+        clusters.setdefault(find(i), []).append(i)
+
+    for members in clusters.values():
+        if len(members) < 2:
+            continue
+        # Sort north→south so stacked labels read top-to-bottom.
+        members = sorted(members, key=lambda i: (-lats[i], lons[i]))
+        # Fan toward the side with more empty space (usually east for AU SE).
+        cl_lon = sum(lons[i] for i in members) / len(members)
+        side = 1.0 if cl_lon < (min(lons) + max(lons)) / 2 else -1.0
+        for k, i in enumerate(members):
+            # Spread vertically in a column beside the cluster.
+            t = k - (len(members) - 1) / 2.0
+            offsets[i][0] = side * (48.0 + density[i] * 8.0)
+            offsets[i][1] = t * 36.0
+
+    # Final repulsion on label anchors (marker + offset).
+    sx = lon_span / 520.0
+    sy = lat_span / 460.0
+    min_sep = 0.075
+    for _ in range(80):
+        for i in range(n):
+            for j in range(i + 1, n):
+                xi = lons[i] + offsets[i][0] * sx
+                yi = lats[i] + offsets[i][1] * sy
+                xj = lons[j] + offsets[j][0] * sx
+                yj = lats[j] + offsets[j][1] * sy
+                dx = (xi - xj) / lon_span
+                dy = (yi - yj) / lat_span
+                dist = math.hypot(dx, dy)
+                if dist >= min_sep:
+                    continue
+                if dist < 1e-9:
+                    dx, dy, dist = 0.02, 0.02, math.hypot(0.02, 0.02)
+                push = (min_sep - dist) / dist
+                offsets[i][0] += dx / max(sx, 1e-12) * lon_span * push * 0.22
+                offsets[i][1] += dy / max(sy, 1e-12) * lat_span * push * 0.28
+                offsets[j][0] -= dx / max(sx, 1e-12) * lon_span * push * 0.22
+                offsets[j][1] -= dy / max(sy, 1e-12) * lat_span * push * 0.28
+
+    return [(float(o[0]), float(o[1])) for o in offsets]
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _DEFAULT_LOOKUP = os.path.normpath(
@@ -500,21 +640,54 @@ def save_png(
     coords = geometry.get("coordinates") or []
     xs = [c[0] for c in coords] if coords else [s["lon"] for s in ordered]
     ys = [c[1] for c in coords] if coords else [s["lat"] for s in ordered]
+    lons = [float(s["lon"]) for s in ordered]
+    lats = [float(s["lat"]) for s in ordered]
 
-    fig, ax = plt.subplots(figsize=(11, 8.5), dpi=140)
-    ax.set_facecolor("#f4f7fb")
+    n_pts = max(len(ordered), 1)
+    # Dense / continent maps: short on-map names + full details beside the legend.
+    dense_map = kind == "map" and n_pts >= 8
+    fig_w = 13.0 if not dense_map else 15.0
+    fig_h_in = 9.5 if not dense_map else 10.8
+    fig = plt.figure(figsize=(fig_w, fig_h_in), dpi=150)
     fig.patch.set_facecolor("white")
+    # Dedicated header band so title + subtitle can never collide with each other
+    # or with the plot (fig.text y-math was unreliable across figure sizes).
+    from matplotlib.gridspec import GridSpec
+
+    title_lines_est = max(1, len(textwrap.wrap(title, width=60)) if title else 1)
+    header_in = 1.05 + 0.32 * (title_lines_est - 1)
+    gs = GridSpec(
+        2, 1, figure=fig,
+        height_ratios=[header_in, max(fig_h_in - header_in, 1.0)],
+        hspace=0.18,
+    )
+    ax_head = fig.add_subplot(gs[0])
+    ax = fig.add_subplot(gs[1])
+    ax_head.set_axis_off()
+    ax_head.set_xlim(0, 1)
+    ax_head.set_ylim(0, 1)
+    ax.set_facecolor("#f4f7fb")
+    emoji_fp = _emoji_fontproperties()
 
     if kind == "route" and coords:
         ax.plot(
             [c[0] for c in coords],
             [c[1] for c in coords],
             color="#0078d4",
-            linewidth=2.4,
+            linewidth=2.6,
             solid_capstyle="round",
             zorder=2,
             label="Route",
         )
+
+    label_offsets = _spread_label_offsets(lons, lats)
+    label_box = dict(
+        boxstyle="round,pad=0.30",
+        facecolor="white",
+        edgecolor="#c8c6c4",
+        linewidth=0.9,
+        alpha=0.96,
+    )
 
     for i, s in enumerate(ordered):
         colour = s.get("color") or (
@@ -526,31 +699,73 @@ def save_png(
                 else "#0078d4"
             )
         )
+        # Large coloured disc; white inner pad keeps icons/numbers crisp.
         ax.scatter(
-            s["lon"], s["lat"], s=160, c=colour, edgecolors="white",
-            linewidths=1.6, zorder=4,
+            s["lon"], s["lat"], s=620, c=colour, edgecolors="white",
+            linewidths=2.6, zorder=4,
         )
-        marker_text = str(i + 1) if kind == "route" else str(s.get("icon_label") or (i + 1))
-        ax.annotate(
-            marker_text,
-            (s["lon"], s["lat"]),
-            ha="center", va="center",
-            fontsize=7 if len(str(marker_text)) > 2 else 8,
-            fontweight="bold", color="white", zorder=5,
+        ax.scatter(
+            s["lon"], s["lat"], s=300, c="#ffffff", edgecolors="none", zorder=5,
         )
-        label = s["name"]
-        if s.get("value"):
-            label = f"{label} ({s['value']})"
-        ax.annotate(
-            label, (s["lon"], s["lat"]),
-            textcoords="offset points", xytext=(10, 10),
-            fontsize=8, color="#323130", zorder=5,
-        )
+        if kind == "route" or dense_map:
+            # Numbers stay sharp at any scale; emoji live in the legend/details.
+            ax.annotate(
+                str(i + 1),
+                (s["lon"], s["lat"]),
+                ha="center", va="center",
+                fontsize=13, fontweight="bold", color="#201f1e", zorder=6,
+            )
+        else:
+            emoji = str(s.get("emoji") or "📍")
+            ax.annotate(
+                emoji,
+                (s["lon"], s["lat"]),
+                ha="center", va="center",
+                fontsize=16, zorder=6,
+                fontproperties=emoji_fp,
+            )
+
+        # Dense maps: numbered markers only (full text lives in Details).
+        # Sparse maps: emoji marker + callout label with value.
+        if not dense_map:
+            name = str(s.get("name") or f"Point {i + 1}")
+            value = str(s.get("value") or "").strip()
+            if value:
+                value = "\n".join(textwrap.wrap(value, width=26))
+                label = f"{name}\n{value}"
+            else:
+                label = name
+            ox, oy = label_offsets[i] if i < len(label_offsets) else (36.0, 22.0)
+            # Keep callouts clear of the marker disc.
+            if math.hypot(ox, oy) < 34:
+                scale = 36 / max(math.hypot(ox, oy), 1e-6)
+                ox, oy = ox * scale, oy * scale
+            ax.annotate(
+                label,
+                (s["lon"], s["lat"]),
+                textcoords="offset points",
+                xytext=(ox, oy),
+                fontsize=10,
+                fontweight="bold",
+                color="#201f1e",
+                ha="center",
+                va="center",
+                zorder=5,
+                linespacing=1.3,
+                bbox=label_box,
+                arrowprops=dict(
+                    arrowstyle="-",
+                    color="#8a8886",
+                    lw=0.9,
+                    shrinkA=2,
+                    shrinkB=18,
+                ),
+            )
 
     if xs and ys:
-        pad_x = max((max(xs) - min(xs)) * 0.15, 0.02)
-        pad_y = max((max(ys) - min(ys)) * 0.15, 0.02)
-        ax.set_xlim(min(xs) - pad_x, max(xs) + pad_x)
+        pad_x = max((max(xs) - min(xs)) * 0.20, 0.04)
+        pad_y = max((max(ys) - min(ys)) * 0.20, 0.04)
+        ax.set_xlim(min(xs) - pad_x, max(xs) + pad_x * (1.25 if dense_map else 1.4))
         ax.set_ylim(min(ys) - pad_y, max(ys) + pad_y)
 
     if kind == "route":
@@ -559,47 +774,126 @@ def save_png(
     else:
         subtitle = f"{len(ordered)} locations | marker map"
 
-    # Title + metrics as separate figure texts with an inch-based gap.
-    # (ax.set_title + fig.suptitle previously overlapped on long titles.)
-    wrapped_title = "\n".join(textwrap.wrap(title, width=56)) or title
-    n_title_lines = wrapped_title.count("\n") + 1
-    fig_h = float(fig.get_size_inches()[1])
-    title_pt, title_ls = 13.0, 1.35
-    title_h_in = n_title_lines * (title_pt / 72.0) * title_ls
-    gap_in = 0.22  # clear air between title baseline and metrics
-    title_top = 0.97
-    fig.text(
-        0.5, title_top, wrapped_title,
-        transform=fig.transFigure, ha="center", va="top",
-        fontsize=title_pt, fontweight="bold", color="#201f1e",
-        linespacing=title_ls,
+    wrapped_title = "\n".join(textwrap.wrap(title, width=60)) or title
+    ax_head.text(
+        0.5, 0.78, wrapped_title,
+        transform=ax_head.transAxes, ha="center", va="center",
+        fontsize=14, fontweight="bold", color="#201f1e", linespacing=1.25,
     )
-    sub_y = title_top - (title_h_in + gap_in) / fig_h
-    fig.text(
-        0.5, sub_y, subtitle,
-        transform=fig.transFigure, ha="center", va="top",
+    ax_head.text(
+        0.5, 0.18, subtitle,
+        transform=ax_head.transAxes, ha="center", va="center",
         fontsize=10, fontweight="normal", color="#605e5c",
     )
-    ax.set_xlabel("Longitude", fontsize=8, color="#605e5c")
-    ax.set_ylabel("Latitude", fontsize=8, color="#605e5c")
-    ax.tick_params(labelsize=7, colors="#605e5c")
+    ax.set_xlabel("Longitude", fontsize=9, color="#605e5c")
+    ax.set_ylabel("Latitude", fontsize=9, color="#605e5c")
+    ax.tick_params(labelsize=8, colors="#605e5c")
     ax.grid(True, color="#e1dfdd", linewidth=0.6, zorder=0)
     for spine in ax.spines.values():
         spine.set_color("#d2d0ce")
-    # PNG is a matplotlib coordinate plot — not an OSM tile basemap.
+
+    # Legend — icons for map mode; start/stop for route mode.
+    legend_handles = []
+    legend_labels = []
+    if kind == "route":
+        from matplotlib.lines import Line2D
+        legend_handles = [
+            Line2D([0], [0], marker="o", color="w", markerfacecolor="#107c10",
+                   markeredgecolor="white", markersize=11, label="Start"),
+            Line2D([0], [0], marker="o", color="w", markerfacecolor="#0078d4",
+                   markeredgecolor="white", markersize=11, label="Stop"),
+            Line2D([0], [0], color="#0078d4", lw=2.5, label="Path (straight-line)"),
+        ]
+        legend_labels = [h.get_label() for h in legend_handles]
+    else:
+        from matplotlib.lines import Line2D
+        seen: dict[str, Mapping[str, Any]] = {}
+        for s in ordered:
+            key = str(s.get("icon") or "pin")
+            if key not in seen:
+                seen[key] = s
+        for key, s in seen.items():
+            meta = icon_meta(key)
+            colour = s.get("color") or meta["color"]
+            name = meta.get("name") or key
+            emoji = meta.get("emoji") or "📍"
+            handle = Line2D(
+                [0], [0],
+                marker="o", color="w",
+                markerfacecolor=colour,
+                markeredgecolor="white",
+                markersize=12,
+                label=f"{emoji}  {name}",
+            )
+            legend_handles.append(handle)
+            legend_labels.append(f"{emoji}  {name}")
+
+    if legend_handles:
+        leg = ax.legend(
+            legend_handles,
+            legend_labels,
+            loc="upper left",
+            bbox_to_anchor=(1.02, 1.0),
+            frameon=True,
+            fancybox=True,
+            framealpha=0.96,
+            edgecolor="#d2d0ce",
+            fontsize=10,
+            title="Legend",
+            title_fontsize=11,
+            labelspacing=0.75,
+            borderpad=0.75,
+            prop=emoji_fp if kind != "route" else None,
+        )
+        if leg.get_title() is not None:
+            leg.get_title().set_fontweight("bold")
+
+    if dense_map:
+        detail_lines = ["Details", ""]
+        for i, s in enumerate(ordered, start=1):
+            emoji = str(s.get("emoji") or "📍")
+            name = str(s.get("name") or f"Point {i}")
+            value = str(s.get("value") or "").strip()
+            detail_lines.append(f"{i}. {emoji}  {name}")
+            if value:
+                for wrapped in textwrap.wrap(value, width=26) or [value]:
+                    detail_lines.append(f"     {wrapped}")
+            detail_lines.append("")
+        fig.text(
+            0.825, 0.58, "\n".join(detail_lines).rstrip(),
+            transform=fig.transFigure,
+            ha="left", va="top",
+            fontsize=9.5,
+            color="#201f1e",
+            linespacing=1.4,
+            fontproperties=emoji_fp,
+            bbox=dict(
+                boxstyle="round,pad=0.6",
+                facecolor="#ffffff",
+                edgecolor="#d2d0ce",
+                alpha=0.98,
+            ),
+        )
+
     footer = (
         "Straight-line sketch (not road route)"
         if kind == "route"
-        else "Static plot (lat/lon)"
+        else "Static plot (lat/lon) — open HTML for interactive map"
     )
     ax.text(
-        0.01, 0.01, footer,
-        transform=ax.transAxes, fontsize=7, color="#8a8886",
-        ha="left", va="bottom",
+        0.01, 0.015, footer,
+        transform=ax.transAxes, fontsize=8, color="#605e5c",
+        ha="left", va="bottom", zorder=7,
     )
 
-    top = max(0.68, sub_y - 0.06)
-    fig.subplots_adjust(left=0.09, right=0.97, bottom=0.08, top=top)
+    right = 0.78 if dense_map else 0.84
+    # Only nudge the map axes horizontally; header band owns the top.
+    ax.set_position([
+        0.07,
+        ax.get_position().y0,
+        right - 0.07,
+        ax.get_position().height,
+    ])
     fig.savefig(out, facecolor=fig.get_facecolor(), pad_inches=0.3)
     plt.close(fig)
     return out
