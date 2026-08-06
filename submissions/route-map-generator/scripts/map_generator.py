@@ -19,7 +19,8 @@ search) and pass ``lat``/``lon`` — the sandbox cannot call external geocoders.
 Always produces PNG + markdown. Optional HTML uses Leaflet + OpenStreetMap
 tiles in the user's browser (not fetched by Python). For routes, the HTML
 also loads a road-following path from the public OSRM demo API (with an
-offline straight-line fallback). Optional GeoJSON/KML.
+offline straight-line fallback). Optional GeoJSON/KML and deep route links
+for Google Maps, Apple Maps, and Bing Maps.
 
 Usage::
 
@@ -46,6 +47,7 @@ import sys
 import textwrap
 import xml.etree.ElementTree as ET
 from typing import Any, Mapping, Optional, Sequence
+from urllib.parse import urlencode
 
 try:
     import matplotlib
@@ -970,6 +972,19 @@ def save_html(
         route_btn_display = "none"
         point_word = "points"
 
+    deep_links = build_map_links(ordered, profile=profile, round_trip=round_trip) if is_route else {}
+    if deep_links:
+        deep_links_html = (
+            '<div class="deeplinks">'
+            "<h2>Open route in</h2>"
+            f'<a class="deeplink" href="{deep_links["google_maps"]}" target="_blank" rel="noopener">Google Maps</a>'
+            f'<a class="deeplink" href="{deep_links["apple_maps"]}" target="_blank" rel="noopener">Apple Maps</a>'
+            f'<a class="deeplink" href="{deep_links["bing_maps"]}" target="_blank" rel="noopener">Bing Maps</a>'
+            "</div>"
+        )
+    else:
+        deep_links_html = ""
+
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1028,6 +1043,14 @@ def save_html(
   }}
   ol.stops .meta {{ color: var(--muted); font-size: 0.76rem; margin-top: 2px; }}
   ol.stops .val {{ font-weight: 600; color: var(--text); font-size: 0.84rem; }}
+  .deeplinks {{ margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }}
+  .deeplinks h2 {{ margin: 0 0 8px; font-size: 0.95rem; }}
+  .deeplink {{
+    display: block; margin: 0 0 6px; padding: 8px 10px; border-radius: 8px;
+    border: 1px solid var(--border); background: #f8fafc; color: var(--accent);
+    text-decoration: none; font-size: 0.84rem; font-weight: 600;
+  }}
+  .deeplink:hover {{ background: #eef6fc; }}
   .map-card {{ position: relative; overflow: hidden; min-height: 520px; }}
   #map {{ height: 72vh; min-height: 520px; width: 100%; }}
   .legend {{
@@ -1085,6 +1108,7 @@ def save_html(
       <h2>{panel_title}</h2>
       <p class="hint">{hint}</p>
       <ol class="stops" id="stopList"></ol>
+      {deep_links_html}
     </aside>
     <div class="map-card">
       <div class="toolbar">
@@ -1405,6 +1429,131 @@ def save_kml(
     return out
 
 
+# ── Deep route links (Google / Apple / Bing) ─────────────────────────────────
+
+def _coord_pair(stop: Mapping[str, Any]) -> str:
+    return f"{float(stop['lat']):.6f},{float(stop['lon']):.6f}"
+
+
+def _travel_modes(profile: str) -> dict[str, str]:
+    """Map skill profile → provider travel-mode query values."""
+    p = (profile or "driving").lower()
+    if p == "walking":
+        return {"google": "walking", "apple": "walking", "bing": "W"}
+    if p in ("cycling", "bicycling", "bike"):
+        return {"google": "bicycling", "apple": "driving", "bing": "D"}
+    return {"google": "driving", "apple": "driving", "bing": "D"}
+
+
+def build_map_links(
+    ordered: Sequence[Mapping[str, Any]],
+    *,
+    profile: str = "driving",
+    round_trip: bool = False,
+) -> dict[str, str]:
+    """Build deep-link URLs that open the ordered stops in native map apps.
+
+    Requires ≥2 points with lat/lon. Round-trip sets destination back to start.
+    """
+    stops = [s for s in ordered if s.get("lat") is not None and s.get("lon") is not None]
+    if len(stops) < 2:
+        return {}
+
+    modes = _travel_modes(profile)
+    origin = _coord_pair(stops[0])
+    if round_trip:
+        destination = origin
+        via = stops[1:]
+    else:
+        destination = _coord_pair(stops[-1])
+        via = stops[1:-1]
+
+    # Google Maps Directions URL
+    # https://developers.google.com/maps/documentation/urls/get-started#directions-action
+    g_params: dict[str, str] = {
+        "api": "1",
+        "origin": origin,
+        "destination": destination,
+        "travelmode": modes["google"],
+    }
+    if via:
+        g_params["waypoints"] = "|".join(_coord_pair(s) for s in via)
+    google = "https://www.google.com/maps/dir/?" + urlencode(g_params, safe=",|")
+
+    # Apple Maps unified directions URL
+    # https://developer.apple.com/documentation/mapkit/unified-map-urls
+    a_params: list[tuple[str, str]] = [
+        ("source", origin),
+        ("destination", destination),
+        ("mode", modes["apple"]),
+    ]
+    for s in via:
+        a_params.append(("waypoint", _coord_pair(s)))
+    apple = "https://maps.apple.com/directions?" + urlencode(a_params, safe=",")
+
+    # Bing Maps multi-stop route URL
+    # https://learn.microsoft.com/en-us/bingmaps/articles/create-a-custom-map-url
+    bing_pts = list(stops)
+    if round_trip:
+        bing_pts = list(stops) + [stops[0]]
+    rtp = "~".join(
+        f"pos.{float(s['lat']):.6f}_{float(s['lon']):.6f}" for s in bing_pts
+    )
+    bing = "https://www.bing.com/maps?" + urlencode(
+        {"rtp": rtp, "mode": modes["bing"]},
+        safe=".~_",
+    )
+
+    return {
+        "google_maps": google,
+        "apple_maps": apple,
+        "bing_maps": bing,
+    }
+
+
+def save_map_links(
+    links: Mapping[str, str],
+    *,
+    out: str,
+    title: str,
+    profile: str,
+    round_trip: bool,
+) -> str:
+    """Write map deep links as JSON (same optional-export pattern as GeoJSON/KML)."""
+    doc = {
+        "title": title,
+        "profile": profile,
+        "round_trip": round_trip,
+        "links": dict(links),
+    }
+    with open(out, "w", encoding="utf-8") as fh:
+        json.dump(doc, fh, indent=2, ensure_ascii=False)
+    return out
+
+
+def _map_links_markdown(links: Mapping[str, str]) -> str:
+    if not links:
+        return ""
+    lines = [
+        "",
+        "### Open in maps",
+        "",
+        "Deep links for the optimised stop order (opens in the map app / site):",
+        "",
+    ]
+    labels = (
+        ("google_maps", "Google Maps"),
+        ("apple_maps", "Apple Maps"),
+        ("bing_maps", "Bing Maps"),
+    )
+    for key, label in labels:
+        url = links.get(key)
+        if url:
+            lines.append(f"- [{label}]({url})")
+    lines.append("")
+    return "\n".join(lines)
+
+
 def save_stops_csv(ordered: Sequence[Mapping[str, Any]], out: str) -> str:
     with open(out, "w", encoding="utf-8") as fh:
         fh.write("sequence,name,lat,lon,location,value,icon\n")
@@ -1616,6 +1765,61 @@ def generate(data: Mapping[str, Any] | str) -> dict[str, Any]:
         )
         result["kml_path"] = os.path.abspath(kml_path)
 
+    # Optional deep route links — same pattern as geojson/kml flags.
+    want_links = bool(
+        payload.get("map_links")
+        or payload.get("maps_links")
+        or payload.get("google_maps")
+        or payload.get("apple_maps")
+        or payload.get("bing_maps")
+    )
+    if want_links:
+        links = build_map_links(
+            ordered,
+            profile=profile,
+            round_trip=round_trip if kind == "route" else False,
+        )
+        # Allow selecting a subset when individual flags are set (without map_links).
+        if not (
+            payload.get("map_links") or payload.get("maps_links")
+        ) and (
+            payload.get("google_maps")
+            or payload.get("apple_maps")
+            or payload.get("bing_maps")
+        ):
+            selected: dict[str, str] = {}
+            if payload.get("google_maps") and links.get("google_maps"):
+                selected["google_maps"] = links["google_maps"]
+            if payload.get("apple_maps") and links.get("apple_maps"):
+                selected["apple_maps"] = links["apple_maps"]
+            if payload.get("bing_maps") and links.get("bing_maps"):
+                selected["bing_maps"] = links["bing_maps"]
+            links = selected
+
+        if links:
+            links_path = str(payload.get("map_links_path", f"{prefix}_map_links.json"))
+            save_map_links(
+                links,
+                out=links_path,
+                title=title,
+                profile=profile,
+                round_trip=round_trip if kind == "route" else False,
+            )
+            result["map_links"] = links
+            result["map_links_path"] = os.path.abspath(links_path)
+            result["google_maps_url"] = links.get("google_maps")
+            result["apple_maps_url"] = links.get("apple_maps")
+            result["bing_maps_url"] = links.get("bing_maps")
+            md = (result["markdown"] or "") + _map_links_markdown(links)
+            result["markdown"] = md
+            with open(md_path, "w", encoding="utf-8") as fh:
+                fh.write(md)
+        else:
+            warnings.append(
+                "map_links requested but need ≥2 points with lat/lon to build route URLs."
+            )
+            result["warnings"] = warnings
+
     return result
 
 
@@ -1644,6 +1848,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--html", action="store_true")
     p.add_argument("--geojson", action="store_true")
     p.add_argument("--kml", action="store_true")
+    p.add_argument(
+        "--map-links",
+        action="store_true",
+        help="Emit Google / Apple / Bing Maps deep route links.",
+    )
     p.add_argument("--json-out", action="store_true", help="Print full result JSON.")
     return p
 
@@ -1667,6 +1876,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         data["geojson"] = True
     if args.kml:
         data["kml"] = True
+    if args.map_links:
+        data["map_links"] = True
 
     result = generate(data)
 
@@ -1682,6 +1893,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"GeoJSON:  {result['geojson_path']}")
     if result.get("kml_path"):
         print(f"KML:      {result['kml_path']}")
+    if result.get("map_links_path"):
+        print(f"MapLinks: {result['map_links_path']}")
+    if result.get("google_maps_url"):
+        print(f"Google:   {result['google_maps_url']}")
+    if result.get("apple_maps_url"):
+        print(f"Apple:    {result['apple_maps_url']}")
+    if result.get("bing_maps_url"):
+        print(f"Bing:     {result['bing_maps_url']}")
     for w in result.get("warnings") or []:
         print(f"Warning:  {w}")
 

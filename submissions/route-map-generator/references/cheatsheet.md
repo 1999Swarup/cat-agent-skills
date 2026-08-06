@@ -23,6 +23,8 @@ API and draws a **road-following** polyline (real streets).
 | `kind` | `map` \| `route` \| `auto` |
 | `points` / `stops` / `locations` | list of place objects |
 | `html` / `geojson` / `kml` | optional exports |
+| `map_links` | `true` → Google / Apple / Bing deep route URLs (+ JSON file) |
+| `google_maps` / `apple_maps` / `bing_maps` | emit only selected provider link(s) |
 | `round_trip` / `profile` / `optimize` | route options |
 
 ### Point object
@@ -46,6 +48,20 @@ API and draws a **road-following** polyline (real streets).
 # Weather / marker map
 python scripts/map_generator.py --payload assets/sample_weather_map.json --html
 
-# Route
-python scripts/map_generator.py --payload assets/sample_stops.json --kind route --html
+# Route + deep links
+python scripts/map_generator.py --payload assets/sample_stops.json --kind route --html --map-links
+```
+
+### Map deep links
+
+```python
+result = generate({
+    "kind": "route",
+    "stops": [...],   # with lat/lon
+    "round_trip": True,
+    "map_links": True,   # or google_maps / apple_maps / bing_maps
+})
+print(result["google_maps_url"])
+print(result["apple_maps_url"])
+print(result["bing_maps_url"])
 ```

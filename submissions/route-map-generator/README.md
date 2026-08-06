@@ -15,7 +15,8 @@ in the same conversation (e.g. Dataverse / CRM / list query), or via agent
 1. Markdown table + **PNG** map (always)  
 2. Optional **Leaflet + OSM** HTML — tiles + **road-following route (OSRM)** load in the browser  
 3. Optional **GeoJSON** / **KML**  
-4. CSV of points  
+4. Optional **map deep links** — Google Maps, Apple Maps, Bing Maps (`map_links: true`)  
+5. CSV of points  
 
 ### PNG vs HTML routes (important)
 

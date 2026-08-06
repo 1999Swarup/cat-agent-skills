@@ -6,6 +6,7 @@
   "html": true,
   "geojson": true,
   "kml": true,
+  "map_links": true,
   "out_prefix": "sydney_coords",
   "stops": [
     {"name": "Opera House", "lat": -33.8568, "lon": 151.2153},

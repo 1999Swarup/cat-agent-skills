@@ -77,9 +77,11 @@ result = generate({
     ],
     "round_trip": True,
     "html": True,
+    "map_links": True,   # Google / Apple / Bing deep route links (like geojson/kml)
 })
 
 print(result["markdown"])
+# Also available: result["google_maps_url"], result["apple_maps_url"], result["bing_maps_url"]
 ```
 
 5. **Reply.** Paste `result["markdown"]`. Tell the user clearly:
@@ -87,6 +89,8 @@ print(result["markdown"])
    - **HTML** = actual road-following route (opens in browser; needs network
      for OSRM). Always enable `html: true` for route requests so they get the
      real path.
+   - When they ask to open the route in Google / Apple / Bing Maps, set
+     `map_links: true` (or the individual provider flags) and include the links.
 
 ## Icons
 
