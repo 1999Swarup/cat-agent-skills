@@ -765,6 +765,13 @@ def save_html(
     border: 3px solid #fff; box-shadow: 0 3px 10px rgba(0,0,0,.28);
   }}
   .marker-pin.icon {{ font-size: 18px; line-height: 34px; }}
+  .stop-label {{
+    background: rgba(255,255,255,.96); border: 1px solid #d8d6d4;
+    border-radius: 6px; padding: 2px 7px; color: #1b1a19;
+    font: 600 11px/1.3 "Segoe UI", system-ui, sans-serif;
+    box-shadow: 0 2px 8px rgba(15,23,42,.12);
+  }}
+  .stop-label::before {{ display: none; }}
 </style>
 </head>
 <body>
@@ -936,11 +943,31 @@ STOPS.forEach((s, i) => {{
   const valHtml = s.value ? `<div style="margin-top:4px"><strong>${{s.value}}</strong></div>` : '';
   m.bindPopup(`<strong>${{s.n}}. ${{s.name}}</strong>${{valHtml}}
     <div style="color:#605e5c;margin-top:4px">${{s.display || ''}}</div>`);
-  m.bindTooltip(s.value ? (s.name + ' · ' + s.value) : s.name, {{ direction: 'top', offset: [0, -14] }});
   m.on('click', () => highlightList(i));
   m.addTo(map);
   markers.push(m);
 }});
+
+function labelText(s) {{
+  return s.value ? (s.name + ' · ' + s.value) : s.name;
+}}
+function applyLabels(on) {{
+  markers.forEach((m, i) => {{
+    if (m.getTooltip()) m.unbindTooltip();
+    if (on) {{
+      m.bindTooltip(labelText(STOPS[i]), {{
+        permanent: true,
+        direction: 'top',
+        offset: [0, -16],
+        className: 'stop-label',
+        opacity: 1,
+      }});
+    }}
+  }});
+  labelsOn = on;
+  const btn = document.getElementById('btnToggleLabels');
+  if (btn) btn.textContent = on ? 'Hide labels' : 'Show labels';
+}}
 
 function fitAll() {{
   const layers = [...markers];
@@ -964,16 +991,8 @@ document.getElementById('btnToggleRoute').onclick = () => {{
   if (!routeLayer) return;
   if (map.hasLayer(routeLayer)) map.removeLayer(routeLayer); else routeLayer.addTo(map);
 }};
-document.getElementById('btnToggleLabels').onclick = () => {{
-  labelsOn = !labelsOn;
-  markers.forEach((m, i) => {{
-    m.unbindTooltip();
-    if (labelsOn) {{
-      const s = STOPS[i];
-      m.bindTooltip(s.value ? s.name + ' · ' + s.value : s.name, {{ direction: 'top', offset: [0, -14] }});
-    }}
-  }});
-}};
+document.getElementById('btnToggleLabels').onclick = () => applyLabels(!labelsOn);
+applyLabels(true);
 fitAll();
 if (IS_ROUTE) loadRoadRoute();
 </script>
