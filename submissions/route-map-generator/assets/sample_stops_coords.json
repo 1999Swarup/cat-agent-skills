@@ -1,7 +1,6 @@
 {
   "kind": "route",
   "title": "Inner Sydney loop (coords)",
-  "mode": "offline",
   "profile": "driving",
   "round_trip": true,
   "html": true,

@@ -6,13 +6,16 @@ result = generate({ ... })
 print(result["markdown"])
 ```
 
+Sandbox: **no external APIs** from Python. Resolve lat/lon via user input,
+**prior tool results** (Dataverse, CRM, lists, connectors), `place_lookup.json`,
+or **agent web search**, then pass them in.
+
 ## Payload
 
 | Field | Notes |
 | --- | --- |
 | `kind` | `map` \| `route` \| `auto` |
 | `points` / `stops` / `locations` | list of place objects |
-| `mode` | `offline` (sandbox) \| `auto` \| `online` |
 | `html` / `geojson` / `kml` | optional exports |
 | `round_trip` / `profile` / `optimize` | route options |
 
@@ -20,8 +23,8 @@ print(result["markdown"])
 
 | Field | Notes |
 | --- | --- |
-| `lat`, `lon` | **always win** when set |
-| `name`, `location`, `address` | labels / geocoding |
+| `lat`, `lon` | **always win** when set (prefer these) |
+| `name`, `location`, `address` | labels; optional place_lookup match |
 | `value`, `value_num` | optional metrics |
 | `icon`, `color` | marker style |
 

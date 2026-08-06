@@ -1,6 +1,5 @@
 {
   "kind": "map",
-  "mode": "offline",
   "title": "Sydney weather snapshot",
   "html": true,
   "geojson": true,

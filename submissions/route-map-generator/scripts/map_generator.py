@@ -1,38 +1,35 @@
 #!/usr/bin/env python3
 """Generic map + route generator — markers, values, icons, optional routing.
 
+Runs fully offline in the Copilot Studio sandbox (no outbound HTTP).
+
 Supports two kinds of output:
 
 * ``map`` — plot locations with markers (optional values + weather/icons)
-* ``route`` — optimise visit order and draw a path (OSRM or offline haversine)
+* ``route`` — optimise visit order and draw a path (haversine + road factor)
 
-Location resolution (per point): customer lat/lon always win, then bundled
-place lookup, then live Nominatim. Network mode ``auto`` falls back offline
-when SSL is blocked (typical Copilot Studio sandbox).
+Location resolution (per point), in order:
+1. ``lat``/``lon`` already in the payload (user, prior tools such as Dataverse,
+   or agent web search) — always preferred
+2. Bundled ``assets/place_lookup.json`` alias match
+
+If neither works, the **agent** must obtain coordinates (prior tool or web
+search) and pass ``lat``/``lon`` — the sandbox cannot call external geocoders.
 
 Always produces PNG + markdown. Optional HTML uses Leaflet + OpenStreetMap
-with numbered/icon markers, legend, and clickable list. Optional GeoJSON/KML.
+tiles in the user's browser (not fetched by Python). Optional GeoJSON/KML.
 
 Usage::
 
     from map_generator import generate
 
-    # Marker map (no routing)
+    # lat/lon often arrive from a previous Dataverse / CRM / list step
     generate({
         "kind": "map",
-        "mode": "offline",
         "points": [
-            {"name": "Sydney", "location": "Sydney", "value": "24 C", "icon": "sunny"},
+            {"name": "Sydney", "lat": -33.8688, "lon": 151.2093, "value": "24 C", "icon": "sunny"},
             {"name": "Manly", "lat": -33.7969, "lon": 151.2870, "value": "22 C", "icon": "cloudy"},
         ],
-        "html": True,
-    })
-
-    # Optimised route
-    generate({
-        "kind": "route",
-        "stops": [{"name": "A", "address": "Bondi"}, {"name": "B", "address": "Manly"}],
-        "round_trip": True,
         "html": True,
     })
 """
@@ -43,12 +40,7 @@ import argparse
 import json
 import math
 import os
-import ssl
 import sys
-import time
-import urllib.error
-import urllib.parse
-import urllib.request
 import xml.etree.ElementTree as ET
 from typing import Any, Mapping, Optional, Sequence
 
@@ -63,11 +55,7 @@ except ImportError as exc:  # pragma: no cover
         "Install with: pip install matplotlib"
     ) from exc
 
-USER_AGENT = "cat-agent-skills-route-map-generator/1.0 (github.com/microsoft/cat-agent-skills)"
-NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
-OSRM_BASE = "https://router.project-osrm.org"
 PROFILES = ("driving", "walking", "cycling")
-MODES = ("auto", "online", "offline")
 KINDS = ("auto", "map", "route")
 
 # Approximate urban speeds (m/s) and road-factor vs straight-line distance.
@@ -127,44 +115,7 @@ _DEFAULT_LOOKUP = os.path.normpath(
 )
 
 
-# ── HTTP helpers (SSL-tolerant) ──────────────────────────────────────────────
-
-def _ssl_contexts() -> list[ssl.SSLContext]:
-    """Try system certs first, then unverified (some sandboxes strip CA store)."""
-    contexts: list[ssl.SSLContext] = []
-    try:
-        contexts.append(ssl.create_default_context())
-    except Exception:
-        pass
-    unverified = ssl._create_unverified_context()  # noqa: SLF001
-    contexts.append(unverified)
-    return contexts
-
-
-def _http_get(url: str, params: Optional[dict[str, Any]] = None, timeout: int = 20) -> Any:
-    if params:
-        url = f"{url}?{urllib.parse.urlencode(params)}"
-    req = urllib.request.Request(
-        url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"}
-    )
-    last_err: Optional[BaseException] = None
-    for ctx in _ssl_contexts():
-        try:
-            with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
-                return json.loads(resp.read().decode("utf-8"))
-        except Exception as e:  # SSL, timeout, HTTP — try next context / raise
-            last_err = e
-            # Only retry on SSL-ish failures; HTTP 4xx/5xx won't improve
-            if isinstance(e, urllib.error.HTTPError):
-                body = e.read().decode("utf-8", errors="replace")[:300]
-                raise RuntimeError(f"HTTP {e.code} from {url.split('?')[0]}: {body}") from e
-            continue
-    raise RuntimeError(
-        f"Network/SSL error calling {url.split('?')[0]}: {last_err}"
-    ) from last_err
-
-
-# ── Place lookup (offline geocoding) ─────────────────────────────────────────
+# ── Place lookup (offline aliases only — no external APIs) ───────────────────
 
 def load_place_lookup(path: Optional[str] = None) -> dict[str, dict[str, Any]]:
     lookup_path = path or _DEFAULT_LOOKUP
@@ -186,7 +137,6 @@ def lookup_place(
     if not text or not places:
         return None
     key = text.strip().lower()
-    # Strip common suffixes for matching
     for noise in (", australia", ", nsw", " nsw", ", sydney", " sydney"):
         key = key.replace(noise, "")
     key = key.strip(" ,")
@@ -195,7 +145,6 @@ def lookup_place(
         p = places[key]
         return float(p["lat"]), float(p["lon"]), str(p.get("label") or text)
 
-    # Substring: longest alias wins
     best: Optional[tuple[int, str]] = None
     for alias in places:
         if alias in key or key in alias:
@@ -208,26 +157,11 @@ def lookup_place(
     return None
 
 
-# ── Geocoding ────────────────────────────────────────────────────────────────
-
-def geocode_online(address: str, *, sleep: float = 1.1) -> tuple[float, float, str]:
-    """Nominatim live geocode. Raises on network/SSL/empty result."""
-    data = _http_get(
-        NOMINATIM_URL,
-        {"q": address, "format": "json", "limit": 1, "addressdetails": 0},
-    )
-    time.sleep(sleep)
-    if not data:
-        raise ValueError(f"Could not geocode address: {address!r}")
-    hit = data[0]
-    return float(hit["lat"]), float(hit["lon"]), str(hit.get("display_name") or address)
-
-
 def _customer_coords(raw: Mapping[str, Any]) -> Optional[tuple[float, float]]:
-    """Return customer-supplied (lat, lon) if present. Always takes precedence.
+    """Return lat/lon from payload if present (user, prior tools, or agent).
 
-    Accepts lat/lon, latitude/longitude, or lng. Ignores null/blank values so an
-    empty lat field does not block address/lookup fallback.
+    Always takes precedence over place_lookup. Accepts common aliases used by
+    Dataverse/CRM exports (latitude/longitude, lng).
     """
     lat_raw = raw.get("lat", raw.get("latitude"))
     lon_raw = raw.get("lon", raw.get("lng", raw.get("longitude")))
@@ -251,23 +185,24 @@ def _customer_coords(raw: Mapping[str, Any]) -> Optional[tuple[float, float]]:
 def resolve_points(
     points: Sequence[Mapping[str, Any]],
     *,
-    mode: str = "auto",
     place_lookup_path: Optional[str] = None,
     min_count: int = 1,
 ) -> tuple[list[dict[str, Any]], list[str]]:
-    """Normalise points/stops to lat/lon + optional value/icon.
+    """Normalise points to lat/lon + optional value/icon (offline only).
 
-    Precedence per point (never overridden once set):
-    1. Customer ``lat``/``lon`` (or latitude/longitude/lng)
+    Precedence per point:
+    1. ``lat``/``lon`` already in the payload (user, prior tools like Dataverse,
+       or agent web search) — always wins
     2. Bundled place lookup on location/address/name
-    3. Live Nominatim (auto/online only)
+
+    Does not call external APIs. If unresolved, raises with guidance for the agent
+    to obtain coordinates (prior tool or web search) and re-invoke with lat/lon.
     """
     if len(points) < min_count:
         raise ValueError(f"Need at least {min_count} location(s).")
     places = load_place_lookup(place_lookup_path)
     warnings: list[str] = []
     resolved: list[dict[str, Any]] = []
-    allow_online = mode in ("auto", "online")
 
     for i, raw in enumerate(points):
         name = str(raw.get("name") or f"Point {i + 1}")
@@ -300,26 +235,15 @@ def resolve_points(
             if hit:
                 lat, lon, display = hit
                 source = "place_lookup"
-            elif allow_online:
-                try:
-                    lat, lon, display = geocode_online(query)
-                    source = "nominatim"
-                except Exception as e:
-                    if mode == "online":
-                        raise
-                    warnings.append(
-                        f"Live geocode failed for {name!r} ({e}); "
-                        "no offline match — provide lat/lon."
-                    )
-                    raise ValueError(
-                        f"Point {i + 1} ({name!r}): cannot resolve location offline. "
-                        f"Add lat/lon, or a name present in assets/place_lookup.json. "
-                        f"Online error: {e}"
-                    ) from e
+                warnings.append(
+                    f"{name!r}: used bundled place_lookup centroid (approximate)."
+                )
             else:
                 raise ValueError(
-                    f"Point {i + 1} ({name!r}): offline mode needs `lat`/`lon` "
-                    "or a known place name from assets/place_lookup.json."
+                    f"Point {i + 1} ({name!r}): no lat/lon and no place_lookup match "
+                    f"for {query!r}. The sandbox cannot call external geocoders — "
+                    "use lat/lon from a prior tool (e.g. Dataverse) or web-search "
+                    "them, then pass lat and lon into the payload."
                 )
 
         meta = icon_meta(icon)
@@ -344,68 +268,12 @@ def resolve_points(
     return resolved, warnings
 
 
-# Backward-compatible alias
 def resolve_stops(*args: Any, **kwargs: Any) -> tuple[list[dict[str, Any]], list[str]]:
     kwargs.setdefault("min_count", 2)
     return resolve_points(*args, **kwargs)
 
 
-# ── OSRM matrix + route ──────────────────────────────────────────────────────
-
-def _coords_path(stops: Sequence[Mapping[str, Any]]) -> str:
-    # OSRM wants lon,lat
-    return ";".join(f"{s['lon']:.6f},{s['lat']:.6f}" for s in stops)
-
-
-def osrm_table(
-    stops: Sequence[Mapping[str, Any]],
-    profile: str = "driving",
-) -> tuple[list[list[float]], list[list[float]]]:
-    """Return (durations_sec[n][n], distances_m[n][n])."""
-    if profile not in PROFILES:
-        raise ValueError(f"profile must be one of {PROFILES}")
-    url = f"{OSRM_BASE}/table/v1/{profile}/{_coords_path(stops)}"
-    data = _http_get(url, {"annotations": "duration,distance"})
-    if data.get("code") != "Ok":
-        raise RuntimeError(f"OSRM table failed: {data.get('message') or data.get('code')}")
-    durations = data["durations"]
-    distances = data["distances"]
-    # Replace None (unreachable) with large sentinel
-    n = len(stops)
-    for i in range(n):
-        for j in range(n):
-            if durations[i][j] is None:
-                durations[i][j] = 1e12
-            if distances[i][j] is None:
-                distances[i][j] = 1e12
-    return durations, distances
-
-
-def osrm_route(
-    ordered: Sequence[Mapping[str, Any]],
-    profile: str = "driving",
-) -> dict[str, Any]:
-    """Full route geometry for an ordered stop list."""
-    url = f"{OSRM_BASE}/route/v1/{profile}/{_coords_path(ordered)}"
-    data = _http_get(
-        url,
-        {
-            "overview": "full",
-            "geometries": "geojson",
-            "steps": "false",
-        },
-    )
-    if data.get("code") != "Ok" or not data.get("routes"):
-        raise RuntimeError(f"OSRM route failed: {data.get('message') or data.get('code')}")
-    route = data["routes"][0]
-    return {
-        "distance_m": float(route["distance"]),
-        "duration_s": float(route["duration"]),
-        "geometry": route["geometry"],  # GeoJSON LineString
-    }
-
-
-# ── Offline distance / geometry (sandbox-safe) ───────────────────────────────
+# ── Distance / geometry (offline haversine) ──────────────────────────────────
 
 def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     r = 6_371_000.0
@@ -578,15 +446,11 @@ def markdown_summary(
                   "*Marker map | OpenStreetMap basemap in HTML export*"]
         return "\n".join(lines)
 
-    if routing_source == "osrm":
-        method = "OSRM road routing"
-        foot = "Map data (c) OpenStreetMap contributors | Routing via OSRM"
-    else:
-        method = "offline estimate (straight-line x road factor; not turn-by-turn)"
-        foot = (
-            "Offline mode: approximate centroids / coordinates | "
-            "haversine + road factor (not live OSM routing)"
-        )
+    method = "offline estimate (haversine x road factor; not turn-by-turn)"
+    foot = (
+        "Sandbox offline route: coordinates from user/agent or place_lookup | "
+        "haversine + road factor (not live road routing)"
+    )
     lines = [
         "### Optimised route",
         "",
@@ -719,7 +583,7 @@ def save_html(
     distance_m: float = 0.0,
     duration_s: float = 0.0,
     profile: str = "driving",
-    routing_source: str = "osrm",
+    routing_source: str = "haversine_offline",
     kind: str = "route",
 ) -> str:
     """Leaflet + OSM interactive map with markers/icons, optional route, legend."""
@@ -751,11 +615,7 @@ def save_html(
     )
     is_route = kind == "route"
     if is_route:
-        method_label = (
-            "OSRM road route"
-            if routing_source == "osrm"
-            else "Approximate path (offline estimate)"
-        )
+        method_label = "Approximate path (offline haversine estimate)"
         chips = (
             f'<div class="chip"><strong>{_fmt_km(distance_m)}</strong> distance</div>'
             f'<div class="chip"><strong>{_fmt_duration(duration_s)}</strong> est. time</div>'
@@ -966,7 +826,7 @@ const latlngs = (GEOM.coordinates || []).map(c => [c[1], c[0]]);
 if (IS_ROUTE && latlngs.length > 1) {{
   routeLayer = L.polyline(latlngs, {{
     color: '#0f6cbd', weight: 6, opacity: 0.9,
-    dashArray: SOURCE === 'osrm' ? null : '10 8'
+    dashArray: '10 8'
   }}).addTo(map);
 }}
 
@@ -1194,10 +1054,6 @@ def generate(data: Mapping[str, Any] | str) -> dict[str, Any]:
     if profile not in PROFILES:
         raise ValueError(f"`profile` must be one of {PROFILES}.")
 
-    mode = str(payload.get("mode", "auto")).lower()
-    if mode not in MODES:
-        raise ValueError(f"`mode` must be one of {MODES}.")
-
     round_trip = bool(payload.get("round_trip", True if kind == "route" else False))
     title = str(
         payload.get("title")
@@ -1207,9 +1063,9 @@ def generate(data: Mapping[str, Any] | str) -> dict[str, Any]:
     prefix = str(payload.get("out_prefix", "map" if kind == "map" else "route"))
     lookup_path = payload.get("place_lookup_path")
 
+    # Fully offline — no external geocoding/routing APIs in the sandbox.
     resolved, warnings = resolve_points(
         points_in,
-        mode=mode,
         place_lookup_path=lookup_path,
         min_count=2 if kind == "route" else 1,
     )
@@ -1232,45 +1088,14 @@ def generate(data: Mapping[str, Any] | str) -> dict[str, Any]:
         else:
             start_idx = int(start)
 
-        if mode in ("auto", "online"):
-            try:
-                durations, _distances = osrm_table(resolved, profile=profile)
-                order_idx = optimise_order(
-                    durations, start=start_idx, round_trip=round_trip
-                )
-                ordered = [resolved[i] for i in order_idx]
-                route_stops = ordered + (
-                    [ordered[0]] if round_trip and len(ordered) > 1 else []
-                )
-                route = osrm_route(route_stops, profile=profile)
-                routing_source = "osrm"
-            except Exception as e:
-                if mode == "online":
-                    raise
-                warnings.append(
-                    f"Live OSRM unavailable ({e}); using offline haversine."
-                )
-                durations, _distances = offline_table(resolved, profile=profile)
-                order_idx = optimise_order(
-                    durations, start=start_idx, round_trip=round_trip
-                )
-                ordered = [resolved[i] for i in order_idx]
-                route_stops = ordered + (
-                    [ordered[0]] if round_trip and len(ordered) > 1 else []
-                )
-                route = offline_route(route_stops, profile=profile)
-                routing_source = "haversine_offline"
-        else:
-            durations, _distances = offline_table(resolved, profile=profile)
-            order_idx = optimise_order(
-                durations, start=start_idx, round_trip=round_trip
-            )
-            ordered = [resolved[i] for i in order_idx]
-            route_stops = ordered + (
-                [ordered[0]] if round_trip and len(ordered) > 1 else []
-            )
-            route = offline_route(route_stops, profile=profile)
-            routing_source = "haversine_offline"
+        durations, _distances = offline_table(resolved, profile=profile)
+        order_idx = optimise_order(durations, start=start_idx, round_trip=round_trip)
+        ordered = [resolved[i] for i in order_idx]
+        route_stops = ordered + (
+            [ordered[0]] if round_trip and len(ordered) > 1 else []
+        )
+        route = offline_route(route_stops, profile=profile)
+        routing_source = "haversine_offline"
 
     chart_path = str(payload.get("chart_path", f"{prefix}_map.png"))
     save_png(
@@ -1302,25 +1127,16 @@ def generate(data: Mapping[str, Any] | str) -> dict[str, Any]:
         fh.write(md)
 
     if kind == "route":
-        method = (
-            "OSRM + nearest-neighbour + 2-opt"
-            if routing_source == "osrm"
-            else "haversine offline + nearest-neighbour + 2-opt"
-        )
-        attribution = (
-            "(c) OpenStreetMap contributors | Routing via OSRM"
-            if routing_source == "osrm"
-            else "Offline estimate | place_lookup / supplied coords"
-        )
+        method = "haversine offline + nearest-neighbour + 2-opt"
+        attribution = "Offline estimate | lat/lon from user/agent or place_lookup"
     else:
         method = "marker map (no routing)"
-        attribution = "(c) OpenStreetMap basemap in HTML | marker plot"
+        attribution = "OpenStreetMap tiles load in the browser HTML | marker plot"
 
     result: dict[str, Any] = {
         "title": title,
         "kind": kind,
         "profile": profile,
-        "mode": mode,
         "routing_source": routing_source,
         "round_trip": round_trip if kind == "route" else False,
         "distance_m": route["distance_m"],
@@ -1403,8 +1219,6 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--payload", required=True, help="Path to JSON payload.")
     p.add_argument("--kind", choices=["auto", "map", "route"], default=None)
-    p.add_argument("--mode", choices=list(MODES), default=None,
-                   help="auto | offline (sandbox) | online")
     p.add_argument("--profile", choices=list(PROFILES), default=None)
     p.add_argument("--round-trip", dest="round_trip", action="store_true", default=None)
     p.add_argument("--one-way", dest="round_trip", action="store_false")
@@ -1422,8 +1236,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     data = _as_payload(args.payload)
     if args.kind is not None:
         data["kind"] = args.kind
-    if args.mode is not None:
-        data["mode"] = args.mode
     if args.profile is not None:
         data["profile"] = args.profile
     if args.round_trip is not None:
@@ -1444,7 +1256,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     print(result["markdown"])
     print()
     print(f"Kind:     {result.get('kind')}")
-    print(f"Mode:     {result.get('mode')} ({result.get('routing_source')})")
+    print(f"Routing:  {result.get('routing_source')}")
     print(f"PNG:      {result['chart_path']}")
     print(f"CSV:      {result['csv_path']}")
     if result.get("html_path"):

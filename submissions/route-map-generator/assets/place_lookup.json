@@ -1,5 +1,5 @@
 {
-  "_comment": "Approximate suburb/landmark centroids for offline geocoding when Nominatim is unavailable. Keys are lowercase match aliases.",
+  "_comment": "Approximate suburb/landmark centroids for offline name matching in the sandbox (no external geocoding). Prefer agent/user lat/lon when available. Keys are lowercase match aliases.",
   "places": {
     "sydney cbd": {"lat": -33.8688, "lon": 151.2093, "label": "Sydney CBD"},
     "sydney": {"lat": -33.8688, "lon": 151.2093, "label": "Sydney CBD"},

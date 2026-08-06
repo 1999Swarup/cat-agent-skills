@@ -1,6 +1,6 @@
 {
   "name": "Route Map Generator",
-  "description": "Plot locations or optimise multi-stop routes on OpenStreetMap — pass places, coordinates, values, and icons supported, get a PNG + markdown table, and optional Leaflet HTML, GeoJSON, or KML. Works offline in sandboxes.",
+  "description": "Plot locations or optimise multi-stop routes — pass places, coordinates, values, and icons (including weather), get a PNG + markdown table, and optional Leaflet HTML, GeoJSON, or KML. Fully offline in the sandbox; accepts lat/lon from prior tools (e.g. Dataverse) or agent web search when missing.",
   "platforms": ["Copilot Studio"],
   "tags": [
     "maps",
@@ -18,5 +18,5 @@
   "authorUrl": "https://github.com/nazishqassim",
   "version": "1.1.0",
   "createdAt": "2026-08-04",
-  "updatedAt": "2026-08-05"
+  "updatedAt": "2026-08-06"
 }
