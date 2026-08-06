@@ -626,7 +626,7 @@ def markdown_summary(
 markdown_route = markdown_summary  # alias
 
 
-# ── PNG map ──────────────────────────────────────────────────────────────────
+# ── PNG map ────────────────────────────────────────────────────────────────────────────────────
 
 def save_png(
     ordered: Sequence[Mapping[str, Any]],
@@ -639,6 +639,10 @@ def save_png(
     duration_s: float = 0.0,
     kind: str = "route",
 ) -> str:
+    from matplotlib.gridspec import GridSpec
+    from matplotlib.lines import Line2D
+    from matplotlib.patches import FancyBboxPatch
+
     coords = geometry.get("coordinates") or []
     xs = [c[0] for c in coords] if coords else [s["lon"] for s in ordered]
     ys = [c[1] for c in coords] if coords else [s["lat"] for s in ordered]
@@ -646,259 +650,281 @@ def save_png(
     lats = [float(s["lat"]) for s in ordered]
 
     n_pts = max(len(ordered), 1)
-    # Dense / continent maps: short on-map names + full details beside the legend.
+    # Dense maps (8+ markers, map mode): numbered markers + structured side panel.
+    # Sparse maps: emoji markers + callout labels.
     dense_map = kind == "map" and n_pts >= 8
-    fig_w = 13.0 if not dense_map else 15.0
-    fig_h_in = 9.5 if not dense_map else 10.8
-    fig = plt.figure(figsize=(fig_w, fig_h_in), dpi=150)
-    fig.patch.set_facecolor("white")
-    # Dedicated header band so title + subtitle can never collide with each other
-    # or with the plot (fig.text y-math was unreliable across figure sizes).
-    from matplotlib.gridspec import GridSpec
 
-    title_lines_est = max(1, len(textwrap.wrap(title, width=60)) if title else 1)
-    header_in = 1.05 + 0.32 * (title_lines_est - 1)
-    gs = GridSpec(
-        2, 1, figure=fig,
-        height_ratios=[header_in, max(fig_h_in - header_in, 1.0)],
-        hspace=0.18,
-    )
-    ax_head = fig.add_subplot(gs[0])
-    ax = fig.add_subplot(gs[1])
+    # ── Figure layout ─────────────────────────────────────────────────────────────────────────────────
+    fig_w   = 13.5 if not dense_map else 15.5
+    fig_h   = 9.0  if not dense_map else 10.0
+    fig = plt.figure(figsize=(fig_w, fig_h), dpi=150)
+    fig.patch.set_facecolor("white")
+
+    title_lines = max(1, len(textwrap.wrap(title or " ", width=64)))
+    # Compact header band: just enough for title + subtitle
+    header_frac = min(0.095 + 0.028 * (title_lines - 1), 0.15)
+
+    if dense_map:
+        gs = GridSpec(
+            2, 2, figure=fig,
+            height_ratios=[header_frac, 1.0 - header_frac],
+            width_ratios=[0.66, 0.34],
+            hspace=0.04, wspace=0.0,
+        )
+        ax_head = fig.add_subplot(gs[0, :])
+        ax      = fig.add_subplot(gs[1, 0])
+        ax_side = fig.add_subplot(gs[1, 1])
+        ax_side.set_axis_off()
+        ax_side.set_xlim(0, 1)
+        ax_side.set_ylim(0, 1)
+    else:
+        gs = GridSpec(
+            2, 1, figure=fig,
+            height_ratios=[header_frac, 1.0 - header_frac],
+            hspace=0.04,
+        )
+        ax_head = fig.add_subplot(gs[0])
+        ax      = fig.add_subplot(gs[1])
+        ax_side = None
+
     ax_head.set_axis_off()
     ax_head.set_xlim(0, 1)
     ax_head.set_ylim(0, 1)
     ax.set_facecolor("#f4f7fb")
     emoji_fp = _emoji_fontproperties()
 
+    # ── Route polyline ────────────────────────────────────────────────────────────────────────────────
     if kind == "route" and coords:
         ax.plot(
-            [c[0] for c in coords],
-            [c[1] for c in coords],
-            color="#0078d4",
-            linewidth=2.6,
-            solid_capstyle="round",
-            zorder=2,
-            label="Route",
+            [c[0] for c in coords], [c[1] for c in coords],
+            color="#0078d4", linewidth=2.6, solid_capstyle="round", zorder=2,
         )
 
+    # ── Markers ───────────────────────────────────────────────────────────────────────────────────
     label_offsets = _spread_label_offsets(lons, lats)
     label_box = dict(
-        boxstyle="round,pad=0.30",
-        facecolor="white",
-        edgecolor="#c8c6c4",
-        linewidth=0.9,
-        alpha=0.96,
+        boxstyle="round,pad=0.28", facecolor="white",
+        edgecolor="#c0bebe", linewidth=0.8, alpha=0.97,
     )
 
     for i, s in enumerate(ordered):
         colour = s.get("color") or (
-            "#107c10"
-            if kind == "route" and i == 0
-            else (
-                "#d83b01"
-                if kind == "route" and i == len(ordered) - 1 and not round_trip
-                else "#0078d4"
-            )
+            "#107c10" if kind == "route" and i == 0
+            else ("#d83b01" if kind == "route" and i == len(ordered) - 1 and not round_trip
+                  else "#0078d4")
         )
-        # Large coloured disc; white inner pad keeps icons/numbers crisp.
-        ax.scatter(
-            s["lon"], s["lat"], s=620, c=colour, edgecolors="white",
-            linewidths=2.6, zorder=4,
-        )
-        ax.scatter(
-            s["lon"], s["lat"], s=300, c="#ffffff", edgecolors="none", zorder=5,
-        )
+        # Single solid disc + white ring — clean, no donut effect
+        ax.scatter(s["lon"], s["lat"], s=580, c=colour,
+                   edgecolors="white", linewidths=2.0, zorder=4)
+
         if kind == "route" or dense_map:
-            # Numbers stay sharp at any scale; emoji live in the legend/details.
+            # White number on coloured disc
             ax.annotate(
-                str(i + 1),
-                (s["lon"], s["lat"]),
+                str(i + 1), (s["lon"], s["lat"]),
                 ha="center", va="center",
-                fontsize=13, fontweight="bold", color="#201f1e", zorder=6,
+                fontsize=11, fontweight="bold", color="white", zorder=6,
             )
         else:
-            emoji = str(s.get("emoji") or "📍")
             ax.annotate(
-                emoji,
-                (s["lon"], s["lat"]),
+                str(s.get("emoji") or "📍"), (s["lon"], s["lat"]),
                 ha="center", va="center",
-                fontsize=16, zorder=6,
-                fontproperties=emoji_fp,
+                fontsize=15, zorder=6, fontproperties=emoji_fp,
             )
 
-        # Dense maps: numbered markers only (full text lives in Details).
-        # Sparse maps: emoji marker + callout label with value.
         if not dense_map:
-            name = str(s.get("name") or f"Point {i + 1}")
+            name  = str(s.get("name") or f"Point {i + 1}")
             value = str(s.get("value") or "").strip()
-            if value:
-                value = "\n".join(textwrap.wrap(value, width=26))
-                label = f"{name}\n{value}"
-            else:
-                label = name
+            label = f"{name}\n{textwrap.fill(value, 24)}" if value else name
             ox, oy = label_offsets[i] if i < len(label_offsets) else (36.0, 22.0)
-            # Keep callouts clear of the marker disc.
-            if math.hypot(ox, oy) < 34:
-                scale = 36 / max(math.hypot(ox, oy), 1e-6)
-                ox, oy = ox * scale, oy * scale
+            r = math.hypot(ox, oy)
+            if r < 36:
+                ox, oy = ox * 36 / max(r, 1e-6), oy * 36 / max(r, 1e-6)
             ax.annotate(
-                label,
-                (s["lon"], s["lat"]),
-                textcoords="offset points",
-                xytext=(ox, oy),
-                fontsize=10,
-                fontweight="bold",
-                color="#201f1e",
-                ha="center",
-                va="center",
-                zorder=5,
-                linespacing=1.3,
+                label, (s["lon"], s["lat"]),
+                textcoords="offset points", xytext=(ox, oy),
+                fontsize=9, fontweight="bold", color="#201f1e",
+                ha="center", va="center", zorder=5, linespacing=1.25,
                 bbox=label_box,
-                arrowprops=dict(
-                    arrowstyle="-",
-                    color="#8a8886",
-                    lw=0.9,
-                    shrinkA=2,
-                    shrinkB=18,
-                ),
+                arrowprops=dict(arrowstyle="-", color="#999", lw=0.7,
+                                shrinkA=2, shrinkB=16),
             )
 
+    # ── Axis limits ──────────────────────────────────────────────────────────────────────────────────
     if xs and ys:
-        pad_x = max((max(xs) - min(xs)) * 0.20, 0.04)
-        pad_y = max((max(ys) - min(ys)) * 0.20, 0.04)
-        ax.set_xlim(min(xs) - pad_x, max(xs) + pad_x * (1.25 if dense_map else 1.4))
+        pad_x = max((max(xs) - min(xs)) * 0.18, 0.04)
+        pad_y = max((max(ys) - min(ys)) * 0.18, 0.04)
+        ax.set_xlim(min(xs) - pad_x, max(xs) + pad_x)
         ax.set_ylim(min(ys) - pad_y, max(ys) + pad_y)
 
-    if kind == "route":
-        subtitle = f"{_fmt_km(distance_m)} | {_fmt_duration(duration_s)} | straight-line estimate"
-        subtitle += " | round trip" if round_trip else ""
-    else:
-        subtitle = f"{len(ordered)} locations | marker map"
-
-    wrapped_title = "\n".join(textwrap.wrap(title, width=60)) or title
-    ax_head.text(
-        0.5, 0.78, wrapped_title,
-        transform=ax_head.transAxes, ha="center", va="center",
-        fontsize=14, fontweight="bold", color="#201f1e", linespacing=1.25,
-    )
-    ax_head.text(
-        0.5, 0.18, subtitle,
-        transform=ax_head.transAxes, ha="center", va="center",
-        fontsize=10, fontweight="normal", color="#605e5c",
-    )
     ax.set_xlabel("Longitude", fontsize=9, color="#605e5c")
-    ax.set_ylabel("Latitude", fontsize=9, color="#605e5c")
+    ax.set_ylabel("Latitude",  fontsize=9, color="#605e5c")
     ax.tick_params(labelsize=8, colors="#605e5c")
-    ax.grid(True, color="#e1dfdd", linewidth=0.6, zorder=0)
+    ax.grid(True, color="#e1dfdd", linewidth=0.5, zorder=0)
     for spine in ax.spines.values():
         spine.set_color("#d2d0ce")
 
-    # Legend — icons for map mode; start/stop for route mode.
-    legend_handles = []
-    legend_labels = []
+    # ── Header ─────────────────────────────────────────────────────────────────────────────────────
+    wrapped_title = "\n".join(textwrap.wrap(title or " ", width=64))
     if kind == "route":
-        from matplotlib.lines import Line2D
-        legend_handles = [
+        subtitle = (
+            f"{_fmt_km(distance_m)} | {_fmt_duration(duration_s)} | straight-line estimate"
+            + (" | round trip" if round_trip else "")
+        )
+    else:
+        subtitle = f"{n_pts} locations | marker map"
+
+    ax_head.text(
+        0.5, 0.72, wrapped_title,
+        transform=ax_head.transAxes, ha="center", va="center",
+        fontsize=14, fontweight="bold", color="#201f1e", linespacing=1.2,
+    )
+    ax_head.text(
+        0.5, 0.16, subtitle,
+        transform=ax_head.transAxes, ha="center", va="center",
+        fontsize=10, color="#605e5c",
+    )
+
+    # ── Legend / side panel ─────────────────────────────────────────────────────────────────────────
+    # No emoji in matplotlib text (they garble). Use plain text + colour dots.
+
+    if kind == "route":
+        handles = [
             Line2D([0], [0], marker="o", color="w", markerfacecolor="#107c10",
-                   markeredgecolor="white", markersize=11, label="Start"),
+                   markeredgecolor="#107c10", markersize=10, label="Start"),
             Line2D([0], [0], marker="o", color="w", markerfacecolor="#0078d4",
-                   markeredgecolor="white", markersize=11, label="Stop"),
+                   markeredgecolor="#0078d4", markersize=10, label="Stop"),
             Line2D([0], [0], color="#0078d4", lw=2.5, label="Path (straight-line)"),
         ]
-        legend_labels = [h.get_label() for h in legend_handles]
-    else:
-        from matplotlib.lines import Line2D
-        seen: dict[str, Mapping[str, Any]] = {}
-        for s in ordered:
-            key = str(s.get("icon") or "pin")
-            if key not in seen:
-                seen[key] = s
-        for key, s in seen.items():
-            meta = icon_meta(key)
-            colour = s.get("color") or meta["color"]
-            name = meta.get("name") or key
-            emoji = meta.get("emoji") or "📍"
-            handle = Line2D(
-                [0], [0],
-                marker="o", color="w",
-                markerfacecolor=colour,
-                markeredgecolor="white",
-                markersize=12,
-                label=f"{emoji}  {name}",
-            )
-            legend_handles.append(handle)
-            legend_labels.append(f"{emoji}  {name}")
-
-    if legend_handles:
-        leg = ax.legend(
-            legend_handles,
-            legend_labels,
-            loc="upper left",
-            bbox_to_anchor=(1.02, 1.0),
-            frameon=True,
-            fancybox=True,
-            framealpha=0.96,
-            edgecolor="#d2d0ce",
-            fontsize=10,
-            title="Legend",
-            title_fontsize=11,
-            labelspacing=0.75,
-            borderpad=0.75,
-            prop=emoji_fp if kind != "route" else None,
-        )
-        if leg.get_title() is not None:
+        leg = ax.legend(handles, [h.get_label() for h in handles],
+                        loc="upper left", bbox_to_anchor=(1.01, 1.0),
+                        frameon=True, fancybox=False, framealpha=0.97,
+                        edgecolor="#d2d0ce", fontsize=9,
+                        title="Legend", title_fontsize=10,
+                        labelspacing=0.65, borderpad=0.7)
+        if leg.get_title():
             leg.get_title().set_fontweight("bold")
 
-    if dense_map:
-        detail_lines = ["Details", ""]
-        for i, s in enumerate(ordered, start=1):
-            emoji = str(s.get("emoji") or "📍")
-            name = str(s.get("name") or f"Point {i}")
-            value = str(s.get("value") or "").strip()
-            detail_lines.append(f"{i}. {emoji}  {name}")
-            if value:
-                for wrapped in textwrap.wrap(value, width=26) or [value]:
-                    detail_lines.append(f"     {wrapped}")
-            detail_lines.append("")
-        fig.text(
-            0.825, 0.58, "\n".join(detail_lines).rstrip(),
-            transform=fig.transFigure,
-            ha="left", va="top",
-            fontsize=9.5,
-            color="#201f1e",
-            linespacing=1.4,
-            fontproperties=emoji_fp,
-            bbox=dict(
-                boxstyle="round,pad=0.6",
-                facecolor="#ffffff",
-                edgecolor="#d2d0ce",
-                alpha=0.98,
-            ),
-        )
+    elif dense_map and ax_side is not None:
+        # Panel background
+        ax_side.add_patch(FancyBboxPatch(
+            (0.0, 0.0), 1.0, 1.0,
+            boxstyle="square,pad=0", linewidth=0.8,
+            edgecolor="#d2d0ce", facecolor="#fafafa",
+            transform=ax_side.transAxes, zorder=0,
+        ))
 
+        seen_keys: dict[str, str] = {}
+        seen_names: dict[str, str] = {}
+        for s in ordered:
+            k = str(s.get("icon") or "pin")
+            if k not in seen_keys:
+                seen_keys[k]  = s.get("color") or icon_meta(k)["color"]
+                seen_names[k] = icon_meta(k).get("name") or k
+
+        # Adapt spacing to fit all entries: tighter when there are many stops
+        n_unique = len(seen_keys)
+        # Budget: colour key uses ~(0.038 + n_unique*row_h + 0.06) of the panel
+        # Remaining for location list: 0.97 - key_budget
+        # Each location: name_h + (value_h if show_val) + gap
+        show_val = n_pts <= 12   # skip value text for very large lists
+        row_h   = 0.040 if n_pts <= 10 else 0.034
+        name_h  = 0.028 if n_pts <= 10 else 0.024
+        val_h   = 0.022 if n_pts <= 10 else 0.018
+        gap_h   = 0.004
+
+        cur_y = 0.97
+
+        ax_side.text(0.07, cur_y, "Colour key",
+                     transform=ax_side.transAxes,
+                     fontsize=9, fontweight="bold", color="#201f1e", va="top")
+        cur_y -= 0.032
+
+        for k, col in seen_keys.items():
+            ax_side.scatter([0.095], [cur_y + 0.007], s=60, c=col,
+                            edgecolors="white", linewidths=0.9,
+                            transform=ax_side.transAxes, zorder=3, clip_on=False)
+            ax_side.text(0.185, cur_y + 0.005, seen_names[k],
+                         transform=ax_side.transAxes, fontsize=8.5,
+                         color="#201f1e", va="center", clip_on=True)
+            cur_y -= row_h
+
+        ax_side.add_artist(Line2D(
+            [0.05, 0.95], [cur_y + 0.008, cur_y + 0.008],
+            transform=ax_side.transAxes, color="#d2d0ce", linewidth=0.7,
+        ))
+        cur_y -= 0.024
+
+        ax_side.text(0.07, cur_y, "Locations",
+                     transform=ax_side.transAxes,
+                     fontsize=9, fontweight="bold", color="#201f1e", va="top")
+        cur_y -= 0.032
+
+        for i, s in enumerate(ordered, start=1):
+            if cur_y < 0.01:
+                break
+            name  = str(s.get("name") or f"Point {i}")
+            value = str(s.get("value") or "").strip()
+            ax_side.text(0.07, cur_y, f"{i}. {name}",
+                         transform=ax_side.transAxes,
+                         fontsize=8.5, fontweight="semibold", color="#201f1e",
+                         va="top", clip_on=True)
+            cur_y -= name_h
+            if value and show_val and cur_y > 0.01:
+                wrapped_val = textwrap.fill(value, width=30)
+                n_vlines = wrapped_val.count("\n") + 1
+                ax_side.text(0.10, cur_y, wrapped_val,
+                             transform=ax_side.transAxes,
+                             fontsize=7.8, color="#605e5c", va="top",
+                             linespacing=1.2, clip_on=True)
+                cur_y -= val_h * n_vlines
+            cur_y -= gap_h
+
+    elif not dense_map:
+        seen2: dict[str, Mapping[str, Any]] = {}
+        for s in ordered:
+            k = str(s.get("icon") or "pin")
+            if k not in seen2:
+                seen2[k] = s
+        handles2 = []
+        for k, s in seen2.items():
+            meta = icon_meta(k)
+            col  = s.get("color") or meta["color"]
+            nm   = meta.get("name") or k
+            handles2.append(Line2D([0], [0], marker="o", color="w",
+                                   markerfacecolor=col, markeredgecolor=col,
+                                   markersize=11, label=nm))
+        if handles2:
+            leg = ax.legend(handles2, [h.get_label() for h in handles2],
+                            loc="upper left", bbox_to_anchor=(1.01, 1.0),
+                            frameon=True, fancybox=False, framealpha=0.97,
+                            edgecolor="#d2d0ce", fontsize=9,
+                            title="Legend", title_fontsize=10,
+                            labelspacing=0.65, borderpad=0.7)
+            if leg.get_title():
+                leg.get_title().set_fontweight("bold")
+
+    # ── Footer ──────────────────────────────────────────────────────────────────────────────────────
     footer = (
         "Straight-line sketch (not road route)"
         if kind == "route"
         else "Static plot (lat/lon) — open HTML for interactive map"
     )
-    ax.text(
-        0.01, 0.015, footer,
-        transform=ax.transAxes, fontsize=8, color="#605e5c",
-        ha="left", va="bottom", zorder=7,
-    )
+    ax.text(0.01, 0.012, footer, transform=ax.transAxes,
+            fontsize=7.5, color="#8a8886", ha="left", va="bottom", zorder=7)
 
-    right = 0.78 if dense_map else 0.84
-    # Only nudge the map axes horizontally; header band owns the top.
-    ax.set_position([
-        0.07,
-        ax.get_position().y0,
-        right - 0.07,
-        ax.get_position().height,
-    ])
-    fig.savefig(out, facecolor=fig.get_facecolor(), pad_inches=0.3)
+    fig.savefig(out, facecolor=fig.get_facecolor(), pad_inches=0.22,
+                bbox_inches="tight")
     plt.close(fig)
     return out
+
+    ax.text(0.01, 0.012, footer, transform=ax.transAxes,
+            fontsize=7.5, color="#8a8886", ha="left", va="bottom", zorder=7)
+
+    fig.savefig(out, facecolor=fig.get_facecolor(), pad_inches=0.22,
+                bbox_inches="tight")
+    plt.close(fig)
+    return out
+
 
 
 # ── Interactive HTML (Leaflet + OpenStreetMap) ───────────────────────────────
