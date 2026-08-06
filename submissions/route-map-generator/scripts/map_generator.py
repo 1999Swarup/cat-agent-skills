@@ -41,6 +41,7 @@ import json
 import math
 import os
 import sys
+import textwrap
 import xml.etree.ElementTree as ET
 from typing import Any, Mapping, Optional, Sequence
 
@@ -442,14 +443,18 @@ def markdown_summary(
             val = s.get("value") or ""
             icon = s.get("icon") or "pin"
             lines.append(f"| {i} | {s['name']} | {loc} | {val} | {icon} |")
-        lines += ["", f"![Map]({chart_path})", "",
-                  "*Marker map | OpenStreetMap basemap in HTML export*"]
+        lines += [
+            "",
+            f"![Map]({chart_path})",
+            "",
+            "*Static lat/lon plot (PNG). Open the HTML export for an OpenStreetMap basemap.*",
+        ]
         return "\n".join(lines)
 
     method = "offline estimate (haversine x road factor; not turn-by-turn)"
     foot = (
-        "Sandbox offline route: coordinates from user/agent or place_lookup | "
-        "haversine + road factor (not live road routing)"
+        "Static lat/lon plot (PNG) | offline haversine route estimate | "
+        "open the HTML export for an OpenStreetMap basemap"
     )
     lines = [
         "### Optimised route",
@@ -491,7 +496,7 @@ def save_png(
     xs = [c[0] for c in coords] if coords else [s["lon"] for s in ordered]
     ys = [c[1] for c in coords] if coords else [s["lat"] for s in ordered]
 
-    fig, ax = plt.subplots(figsize=(10, 8), dpi=140)
+    fig, ax = plt.subplots(figsize=(11, 8.5), dpi=140)
     ax.set_facecolor("#f4f7fb")
     fig.patch.set_facecolor("white")
 
@@ -543,15 +548,32 @@ def save_png(
         ax.set_xlim(min(xs) - pad_x, max(xs) + pad_x)
         ax.set_ylim(min(ys) - pad_y, max(ys) + pad_y)
 
-    ax.set_title(title, fontsize=13, fontweight="bold", color="#201f1e", pad=12)
     if kind == "route":
         subtitle = f"{_fmt_km(distance_m)} | {_fmt_duration(duration_s)}"
         subtitle += " | round trip" if round_trip else ""
     else:
         subtitle = f"{len(ordered)} locations | marker map"
-    ax.text(
-        0.5, 1.02, subtitle, transform=ax.transAxes,
-        ha="center", va="bottom", fontsize=9, color="#605e5c",
+
+    # Title + metrics as separate figure texts with an inch-based gap.
+    # (ax.set_title + fig.suptitle previously overlapped on long titles.)
+    wrapped_title = "\n".join(textwrap.wrap(title, width=56)) or title
+    n_title_lines = wrapped_title.count("\n") + 1
+    fig_h = float(fig.get_size_inches()[1])
+    title_pt, title_ls = 13.0, 1.35
+    title_h_in = n_title_lines * (title_pt / 72.0) * title_ls
+    gap_in = 0.22  # clear air between title baseline and metrics
+    title_top = 0.97
+    fig.text(
+        0.5, title_top, wrapped_title,
+        transform=fig.transFigure, ha="center", va="top",
+        fontsize=title_pt, fontweight="bold", color="#201f1e",
+        linespacing=title_ls,
+    )
+    sub_y = title_top - (title_h_in + gap_in) / fig_h
+    fig.text(
+        0.5, sub_y, subtitle,
+        transform=fig.transFigure, ha="center", va="top",
+        fontsize=10, fontweight="normal", color="#605e5c",
     )
     ax.set_xlabel("Longitude", fontsize=8, color="#605e5c")
     ax.set_ylabel("Latitude", fontsize=8, color="#605e5c")
@@ -559,14 +581,16 @@ def save_png(
     ax.grid(True, color="#e1dfdd", linewidth=0.6, zorder=0)
     for spine in ax.spines.values():
         spine.set_color("#d2d0ce")
+    # PNG is a matplotlib coordinate plot — not an OSM tile basemap.
     ax.text(
-        0.01, 0.01, "(c) OpenStreetMap",
+        0.01, 0.01, "Static plot (lat/lon)",
         transform=ax.transAxes, fontsize=7, color="#8a8886",
         ha="left", va="bottom",
     )
 
-    fig.tight_layout()
-    fig.savefig(out, bbox_inches="tight", facecolor=fig.get_facecolor())
+    top = max(0.68, sub_y - 0.06)
+    fig.subplots_adjust(left=0.09, right=0.97, bottom=0.08, top=top)
+    fig.savefig(out, facecolor=fig.get_facecolor(), pad_inches=0.3)
     plt.close(fig)
     return out
 
@@ -1131,7 +1155,7 @@ def generate(data: Mapping[str, Any] | str) -> dict[str, Any]:
         attribution = "Offline estimate | lat/lon from user/agent or place_lookup"
     else:
         method = "marker map (no routing)"
-        attribution = "OpenStreetMap tiles load in the browser HTML | marker plot"
+        attribution = "PNG is a static lat/lon plot; OSM tiles only in the HTML export"
 
     result: dict[str, Any] = {
         "title": title,
