@@ -78,10 +78,14 @@ result = generate({
     "round_trip": True,
     "html": True,
     "map_links": True,   # Google / Apple / Bing deep route links (like geojson/kml)
+    "qr_codes": True,    # QR code PNGs + combined sheet so users can scan on phone
 })
 
 print(result["markdown"])
-# Also available: result["google_maps_url"], result["apple_maps_url"], result["bing_maps_url"]
+# Also available:
+# result["google_maps_url"], result["apple_maps_url"], result["bing_maps_url"]
+# result["qr_sheet_path"]   — path to the combined QR PNG sheet
+# result["qr_paths"]        — dict with individual QR paths per provider
 ```
 
 5. **Reply.** Paste `result["markdown"]`. Tell the user clearly:
@@ -91,6 +95,12 @@ print(result["markdown"])
      real path.
    - When they ask to open the route in Google / Apple / Bing Maps, set
      `map_links: true` (or the individual provider flags) and include the links.
+   - When they ask for a **QR code** to scan on their phone, set both
+     `map_links: true` and `qr_codes: true`. The result includes
+     `result["qr_sheet_path"]` — embed it inline with
+     `![QR codes](result["qr_sheet_path"])`. The user can scan any code to open
+     the route in their preferred app. Requires `qrcode[pil]`
+     (`pip install qrcode[pil]`).
 
 ## Icons
 

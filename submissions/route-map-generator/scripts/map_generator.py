@@ -1557,7 +1557,126 @@ def save_map_links(
     return out
 
 
-def _map_links_markdown(links: Mapping[str, str]) -> str:
+def save_qr_codes(
+    links: Mapping[str, str],
+    *,
+    prefix: str,
+    title: str = "",
+) -> dict[str, str]:
+    """Generate QR code PNGs for each map deep link and a combined sheet.
+
+    Returns a dict with keys ``google_maps``, ``apple_maps``, ``bing_maps``
+    (individual files) and ``sheet`` (combined image), all pointing to absolute
+    file paths.  Any key whose link is absent is omitted from the result.
+
+    Requires ``qrcode[pil]`` (``pip install qrcode[pil]``).
+    """
+    try:
+        import qrcode
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError as exc:  # pragma: no cover
+        raise ImportError(
+            "QR code generation requires 'qrcode[pil]': pip install qrcode[pil]"
+        ) from exc
+
+    LABELS: list[tuple[str, str]] = [
+        ("google_maps", "Google Maps"),
+        ("apple_maps", "Apple Maps"),
+        ("bing_maps", "Bing Maps"),
+    ]
+    QR_SIZE = 280        # px per individual QR image (data area)
+    MARGIN  = 20         # px margin inside each cell
+    LABEL_H = 34         # px reserved below each QR for its text label
+    CELL_W  = QR_SIZE + MARGIN * 2
+    CELL_H  = QR_SIZE + MARGIN * 2 + LABEL_H
+    BG      = (255, 255, 255)
+    FG      = (30,  30,  30)
+    MUTED   = (96,  94,  92)
+
+    paths: dict[str, str] = {}
+    cells: list[tuple[Image.Image, str]] = []   # (qr_img, label) for sheet
+
+    for key, label in LABELS:
+        url = links.get(key)
+        if not url:
+            continue
+
+        qr = qrcode.QRCode(
+            version=None,
+            error_correction=qrcode.constants.ERROR_CORRECT_M,
+            box_size=8,
+            border=3,
+        )
+        qr.add_data(url)
+        qr.make(fit=True)
+        img: Image.Image = qr.make_image(fill_color="black", back_color="white").convert("RGB")
+        img = img.resize((QR_SIZE, QR_SIZE), Image.NEAREST)
+
+        dest = os.path.abspath(f"{prefix}_qr_{key}.png")
+        img.save(dest, "PNG")
+        paths[key] = dest
+        cells.append((img, label))
+
+    if not cells:
+        return paths
+
+    # ── Combined sheet ────────────────────────────────────────────────────────
+    n = len(cells)
+    TITLE_H = 52 if title else 0
+    sheet_w = CELL_W * n
+    sheet_h = CELL_H + TITLE_H
+    sheet = Image.new("RGB", (sheet_w, sheet_h), BG)
+    draw  = ImageDraw.Draw(sheet)
+
+    # Try to load a legible system font; fall back to default
+    font_large: ImageFont.ImageFont | ImageFont.FreeTypeFont
+    font_small: ImageFont.ImageFont | ImageFont.FreeTypeFont
+    try:
+        font_large = ImageFont.truetype("arial.ttf",  16)
+        font_sm2   = ImageFont.truetype("arial.ttf",  13)
+        font_title = ImageFont.truetype("arialbd.ttf", 18)
+    except OSError:
+        try:
+            font_large = ImageFont.truetype("DejaVuSans.ttf", 16)
+            font_sm2   = ImageFont.truetype("DejaVuSans.ttf", 13)
+            font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", 18)
+        except OSError:
+            font_large = font_sm2 = font_title = ImageFont.load_default()
+
+    # Title bar
+    if title:
+        short = title if len(title) <= 55 else title[:52] + "…"
+        bbox = draw.textbbox((0, 0), short, font=font_title)
+        tw   = bbox[2] - bbox[0]
+        draw.text(((sheet_w - tw) // 2, 14), short, fill=FG, font=font_title)
+        draw.line([(0, TITLE_H - 2), (sheet_w, TITLE_H - 2)], fill=(220, 210, 206), width=1)
+
+    # QR cells
+    for idx, (qr_img, lbl) in enumerate(cells):
+        x0 = idx * CELL_W
+        y0 = TITLE_H
+
+        # Thin cell border except last right edge
+        if idx > 0:
+            draw.line([(x0, y0 + 6), (x0, y0 + CELL_H - 6)], fill=(220, 210, 206), width=1)
+
+        # Paste QR
+        sheet.paste(qr_img, (x0 + MARGIN, y0 + MARGIN))
+
+        # Label below QR
+        bbox = draw.textbbox((0, 0), lbl, font=font_large)
+        lw   = bbox[2] - bbox[0]
+        lx   = x0 + (CELL_W - lw) // 2
+        ly   = y0 + MARGIN + QR_SIZE + 6
+        draw.text((lx, ly), lbl, fill=MUTED, font=font_large)
+
+    sheet_path = os.path.abspath(f"{prefix}_qr_sheet.png")
+    sheet.save(sheet_path, "PNG")
+    paths["sheet"] = sheet_path
+    return paths
+
+
+def _map_links_markdown(links: Mapping[str, str], qr_paths: Mapping[str, str] | None = None) -> str:
     if not links:
         return ""
     lines = [
@@ -1577,6 +1696,21 @@ def _map_links_markdown(links: Mapping[str, str]) -> str:
         if url:
             lines.append(f"- [{label}]({url})")
     lines.append("")
+    if qr_paths:
+        lines += [
+            "**QR codes** — scan to open the route on your phone:",
+            "",
+        ]
+        sheet = qr_paths.get("sheet")
+        if sheet:
+            lines.append(f"![QR code sheet]({sheet})")
+            lines.append("")
+        else:
+            for key, label in labels:
+                p = qr_paths.get(key)
+                if p:
+                    lines.append(f"- {label}: `{p}`")
+            lines.append("")
     return "\n".join(lines)
 
 
@@ -1836,7 +1970,20 @@ def generate(data: Mapping[str, Any] | str) -> dict[str, Any]:
             result["google_maps_url"] = links.get("google_maps")
             result["apple_maps_url"] = links.get("apple_maps")
             result["bing_maps_url"] = links.get("bing_maps")
-            md = (result["markdown"] or "") + _map_links_markdown(links)
+
+            # Optional QR codes for the deep links
+            want_qr = bool(payload.get("qr_codes") or payload.get("qr"))
+            qr_paths: dict[str, str] = {}
+            if want_qr:
+                try:
+                    qr_paths = save_qr_codes(links, prefix=prefix, title=title)
+                    result["qr_paths"] = qr_paths
+                    result["qr_sheet_path"] = qr_paths.get("sheet")
+                except ImportError as exc:
+                    warnings.append(str(exc))
+                    result["warnings"] = warnings
+
+            md = (result["markdown"] or "") + _map_links_markdown(links, qr_paths or None)
             result["markdown"] = md
             with open(md_path, "w", encoding="utf-8") as fh:
                 fh.write(md)
@@ -1879,6 +2026,12 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Emit Google / Apple / Bing Maps deep route links.",
     )
+    p.add_argument(
+        "--qr-codes",
+        action="store_true",
+        dest="qr_codes",
+        help="Generate QR code PNGs for the map deep links (requires --map-links).",
+    )
     p.add_argument("--json-out", action="store_true", help="Print full result JSON.")
     return p
 
@@ -1904,6 +2057,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         data["kml"] = True
     if args.map_links:
         data["map_links"] = True
+    if args.qr_codes:
+        data["qr_codes"] = True
 
     result = generate(data)
 
@@ -1921,6 +2076,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"KML:      {result['kml_path']}")
     if result.get("map_links_path"):
         print(f"MapLinks: {result['map_links_path']}")
+    if result.get("qr_sheet_path"):
+        print(f"QR sheet: {result['qr_sheet_path']}")
     if result.get("google_maps_url"):
         print(f"Google:   {result['google_maps_url']}")
     if result.get("apple_maps_url"):

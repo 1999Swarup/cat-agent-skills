@@ -25,6 +25,7 @@ API and draws a **road-following** polyline (real streets).
 | `html` / `geojson` / `kml` | optional exports |
 | `map_links` | `true` → Google / Apple / Bing deep route URLs (+ JSON file) |
 | `google_maps` / `apple_maps` / `bing_maps` | emit only selected provider link(s) |
+| `qr_codes` | `true` → QR code PNGs per provider + combined sheet (requires `map_links: true`) |
 | `round_trip` / `profile` / `optimize` | route options |
 
 ### Point object
@@ -52,7 +53,7 @@ python scripts/map_generator.py --payload assets/sample_weather_map.json --html
 python scripts/map_generator.py --payload assets/sample_stops.json --kind route --html --map-links
 ```
 
-### Map deep links
+### Map deep links + QR codes
 
 ```python
 result = generate({
@@ -60,8 +61,18 @@ result = generate({
     "stops": [...],   # with lat/lon
     "round_trip": True,
     "map_links": True,   # or google_maps / apple_maps / bing_maps
+    "qr_codes": True,    # QR PNG per provider + combined sheet
 })
 print(result["google_maps_url"])
 print(result["apple_maps_url"])
 print(result["bing_maps_url"])
+print(result["qr_sheet_path"])    # combined PNG — embed with ![QR codes](path)
+# result["qr_paths"] has individual paths: google_maps, apple_maps, bing_maps
+```
+
+**Dependency:** `pip install qrcode[pil]`
+
+```bash
+# Route + deep links + QR codes (CLI)
+python scripts/map_generator.py --payload assets/sample_stops.json --kind route --html --map-links --qr-codes
 ```
