@@ -16,7 +16,9 @@ those rows here. Prefer lat/lon from those prior results — do not re-geocode
 them.
 
 Always return markdown **inline with a PNG**. Optional Leaflet + OSM HTML loads
-map tiles in the **user's browser** (not from the Python sandbox).
+map tiles in the **user's browser** (not from the Python sandbox). For routes,
+the HTML also fetches a **road-following path** from the public OSRM demo API
+in the browser (falls back to a straight-line estimate if offline).
 
 ## Instructions
 
@@ -80,8 +82,9 @@ result = generate({
 print(result["markdown"])
 ```
 
-5. **Reply.** Paste `result["markdown"]`. Note that route distances/times are
-   offline estimates (haversine × road factor), not live traffic routing.
+5. **Reply.** Paste `result["markdown"]`. Note that PNG distances/times are
+   offline estimates (haversine × road factor). The HTML export draws a real
+   road path via OSRM when opened online.
 
 ## Icons
 

@@ -13,7 +13,7 @@ in the same conversation (e.g. Dataverse / CRM / list query), or via agent
 ## What you get
 
 1. Markdown table + **PNG** map (always)  
-2. Optional **Leaflet + OSM** HTML — tiles load in the browser when opened  
+2. Optional **Leaflet + OSM** HTML — tiles + **road-following route (OSRM)** load in the browser  
 3. Optional **GeoJSON** / **KML**  
 4. CSV of points  
 
@@ -56,5 +56,6 @@ in the same conversation (e.g. Dataverse / CRM / list query), or via agent
 
 ## Dependencies
 
-`matplotlib` for PNG. No outbound network from the script. Browser network is
-only needed when a user opens the HTML file to load Leaflet/OSM tiles.
+`matplotlib` for PNG. No outbound network from the script. When a user opens the
+HTML file, the browser loads Leaflet/OSM tiles and (for routes) a road path from
+the public OSRM demo API.

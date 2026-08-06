@@ -17,7 +17,9 @@ If neither works, the **agent** must obtain coordinates (prior tool or web
 search) and pass ``lat``/``lon`` — the sandbox cannot call external geocoders.
 
 Always produces PNG + markdown. Optional HTML uses Leaflet + OpenStreetMap
-tiles in the user's browser (not fetched by Python). Optional GeoJSON/KML.
+tiles in the user's browser (not fetched by Python). For routes, the HTML
+also loads a road-following path from the public OSRM demo API (with an
+offline straight-line fallback). Optional GeoJSON/KML.
 
 Usage::
 
@@ -453,8 +455,8 @@ def markdown_summary(
 
     method = "offline estimate (haversine x road factor; not turn-by-turn)"
     foot = (
-        "Static lat/lon plot (PNG) | offline haversine route estimate | "
-        "open the HTML export for an OpenStreetMap basemap"
+        "Static lat/lon plot (PNG) | offline distance estimate | "
+        "HTML draws a road-following route via OSRM in the browser"
     )
     lines = [
         "### Optimised route",
@@ -639,16 +641,17 @@ def save_html(
     )
     is_route = kind == "route"
     if is_route:
-        method_label = "Approximate path (offline haversine estimate)"
+        method_label = "Loading road route…"
         chips = (
-            f'<div class="chip"><strong>{_fmt_km(distance_m)}</strong> distance</div>'
-            f'<div class="chip"><strong>{_fmt_duration(duration_s)}</strong> est. time</div>'
+            f'<div class="chip" id="chipDistance"><strong>{_fmt_km(distance_m)}</strong> distance (est.)</div>'
+            f'<div class="chip" id="chipDuration"><strong>{_fmt_duration(duration_s)}</strong> est. time</div>'
             f'<div class="chip"><strong>{profile}</strong> profile</div>'
             f'<div class="chip"><strong>'
             f'{"Round trip" if round_trip else "One way"}</strong></div>'
+            f'<div class="chip" id="chipRouteSrc"><strong>OSRM</strong> road path</div>'
         )
         panel_title = "Visit order"
-        hint = "Click a stop to fly to it on the map."
+        hint = "Click a stop to fly to it on the map. Route follows roads via OSRM when online."
         route_btn_display = "inline-block"
         point_word = "stops"
     else:
@@ -758,7 +761,7 @@ def save_html(
   <header>
     <div>
       <h1>{title_esc}</h1>
-      <div class="sub">{method_label} on OpenStreetMap</div>
+      <div class="sub" id="methodLabel">{method_label} on OpenStreetMap</div>
     </div>
     <div class="chips">
       {chips}
@@ -784,6 +787,7 @@ def save_html(
   <p class="foot">
     Map data &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>
     · <a href="https://leafletjs.com/" target="_blank" rel="noopener">Leaflet</a>
+    · Road routes via <a href="http://project-osrm.org/" target="_blank" rel="noopener">OSRM</a> (browser)
   </p>
 </div>
 <script>
@@ -791,11 +795,33 @@ const STOPS = {stops_js};
 const GEOM = {geom_js};
 const ROUND = {str(round_trip).lower()};
 const SOURCE = {json.dumps(routing_source)};
+const PROFILE = {json.dumps(profile)};
 const KIND = {json.dumps(kind)};
 const IS_ROUTE = KIND === 'route';
+const OSRM_PROFILE = ({{ driving: 'driving', walking: 'foot', cycling: 'bike' }})[PROFILE] || 'driving';
 const markers = [];
 let routeLayer = null;
 let labelsOn = true;
+
+function fmtKm(m) {{
+  const km = Number(m) / 1000;
+  return (km < 10 ? km.toFixed(1) : Math.round(km).toString()) + ' km';
+}}
+function fmtDuration(s) {{
+  const sec = Math.max(0, Math.round(Number(s)));
+  const h = Math.floor(sec / 3600);
+  const m = Math.round((sec % 3600) / 60);
+  if (h <= 0) return m + ' min';
+  return h + ' h ' + m + ' min';
+}}
+function setMethod(text) {{
+  const el = document.getElementById('methodLabel');
+  if (el) el.textContent = text;
+}}
+function setChip(id, html) {{
+  const el = document.getElementById(id);
+  if (el) el.innerHTML = html;
+}}
 
 function markerIcon(s) {{
   const useEmoji = s.icon && s.icon !== 'pin';
@@ -834,7 +860,7 @@ if (IS_ROUTE) {{
   legend.innerHTML += `
     <div class="legend-row"><span class="swatch" style="background:#107c10"></span> Start</div>
     <div class="legend-row"><span class="swatch" style="background:#0078d4"></span> Stop</div>
-    <div class="legend-row"><span class="swatch line" style="background:#0f6cbd"></span> Route</div>`;
+    <div class="legend-row"><span class="swatch line" style="background:#0f6cbd"></span> Road route</div>`;
 }} else {{
   seenIcons.forEach((s) => {{
     legend.innerHTML += `<div class="legend-row"><span class="swatch" style="background:${{s.color}}">${{s.emoji}}</span> ${{s.icon}}</div>`;
@@ -846,12 +872,52 @@ L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
   maxZoom: 19, attribution: '&copy; OpenStreetMap'
 }}).addTo(map);
 
-const latlngs = (GEOM.coordinates || []).map(c => [c[1], c[0]]);
-if (IS_ROUTE && latlngs.length > 1) {{
+function drawRoute(latlngs, {{ road }}) {{
+  if (routeLayer) map.removeLayer(routeLayer);
+  routeLayer = null;
+  if (!latlngs || latlngs.length < 2) return;
   routeLayer = L.polyline(latlngs, {{
-    color: '#0f6cbd', weight: 6, opacity: 0.9,
-    dashArray: '10 8'
+    color: '#0f6cbd',
+    weight: road ? 5 : 5,
+    opacity: 0.92,
+    dashArray: road ? null : '10 8',
   }}).addTo(map);
+}}
+
+function fallbackRoute() {{
+  const latlngs = (GEOM.coordinates || []).map(c => [c[1], c[0]]);
+  drawRoute(latlngs, {{ road: false }});
+  setMethod('Approximate path (OSRM unavailable) on OpenStreetMap');
+  setChip('chipRouteSrc', '<strong>Offline</strong> straight-line est.');
+}}
+
+async function loadRoadRoute() {{
+  if (!IS_ROUTE || STOPS.length < 2) return;
+  const pts = STOPS.map(s => s.lon.toFixed(6) + ',' + s.lat.toFixed(6));
+  if (ROUND) pts.push(STOPS[0].lon.toFixed(6) + ',' + STOPS[0].lat.toFixed(6));
+  // Public OSRM demo — used only from the browser (not the Python sandbox).
+  const url = 'https://router.project-osrm.org/route/v1/' + OSRM_PROFILE + '/'
+    + pts.join(';') + '?overview=full&geometries=geojson&steps=false';
+  try {{
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (data.code !== 'Ok' || !data.routes || !data.routes[0]) {{
+      throw new Error(data.code || 'no route');
+    }}
+    const route = data.routes[0];
+    const latlngs = (route.geometry.coordinates || []).map(c => [c[1], c[0]]);
+    drawRoute(latlngs, {{ road: true }});
+    setChip('chipDistance', '<strong>' + fmtKm(route.distance) + '</strong> distance');
+    setChip('chipDuration', '<strong>' + fmtDuration(route.duration) + '</strong> drive time');
+    setChip('chipRouteSrc', '<strong>OSRM</strong> road path');
+    setMethod('Road-following route (OSRM) on OpenStreetMap');
+    fitAll();
+  }} catch (err) {{
+    console.warn('OSRM road route failed; using approximate path', err);
+    fallbackRoute();
+    fitAll();
+  }}
 }}
 
 STOPS.forEach((s, i) => {{
@@ -898,6 +964,7 @@ document.getElementById('btnToggleLabels').onclick = () => {{
   }});
 }};
 fitAll();
+if (IS_ROUTE) loadRoadRoute();
 </script>
 </body>
 </html>

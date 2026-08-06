@@ -10,6 +10,10 @@ Sandbox: **no external APIs** from Python. Resolve lat/lon via user input,
 **prior tool results** (Dataverse, CRM, lists, connectors), `place_lookup.json`,
 or **agent web search**, then pass them in.
 
+HTML routes: when opened in a browser, the page calls the public **OSRM** demo
+API and draws a road-following polyline (falls back to the offline estimate if
+unreachable).
+
 ## Payload
 
 | Field | Notes |
