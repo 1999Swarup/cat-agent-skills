@@ -1729,7 +1729,7 @@ def _map_links_markdown(links: Mapping[str, str], qr_paths: Mapping[str, str] | 
     return "\n".join(lines)
 
 
-_FORMULA_CHARS = frozenset("=+-@|%`")
+_FORMULA_CHARS = frozenset("=+@|%`")
 
 
 def _csv_cell(val: str) -> str:
