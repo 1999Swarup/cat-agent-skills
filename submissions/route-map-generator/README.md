@@ -2,70 +2,68 @@
 
 A generic **map + route** skill for Copilot Studio.
 
-- **Maps** — plot locations with optional values and icons (weather, sites, stores)
-- **Routes** — optimise multi-stop visit order and draw a path  
+- **Maps** — plot locations with optional values and icons (weather, sites, stores, CRM records)
+- **Routes** — optimise multi-stop visit order and draw a path
 
-The Python toolkit runs **fully offline** in the sandbox (no external API calls).
-Coordinates are expected in the payload — from the user, from a **previous tool**
-in the same conversation (e.g. Dataverse / CRM / list query), or via agent
-**web search** when still missing.
+Runs **fully offline** in the Python sandbox. Coordinates come from the user, a **prior tool** (Dataverse, CRM, SharePoint, connectors), or **agent web search**.
 
 ## What you get
 
-1. Markdown table + **PNG** map (always)  
-2. Optional **Leaflet + OSM** HTML — tiles + **road-following route (OSRM)** load in the browser  
-3. Optional **GeoJSON** / **KML**  
-4. Optional **map deep links** — Google Maps, Apple Maps, Bing Maps (`map_links: true`)  
-5. CSV of points  
+| Export | Flag | Notes |
+| --- | --- | --- |
+| PNG map | *(always)* | Inline in markdown; straight-line sketch |
+| Interactive HTML | `html: true` | OSM tiles + real road route (OSRM, browser-side) |
+| CSV | `csv: true` | Stops/locations table |
+| GeoJSON | `geojson: true` | For QGIS, Power BI, ArcGIS |
+| KML | `kml: true` | For Google Earth, My Maps |
+| Map deep links | `map_links: true` | Google Maps, Apple Maps, Bing Maps |
+| QR codes | `qr_codes: true` | Scannable PNG sheet; requires `map_links: true` and `qrcode[pil]` |
 
-### PNG vs HTML routes (important)
+**All exports except PNG are off by default.** Every response includes an "Optional exports" hint listing unused flags.
 
-| Output | What the path looks like |
+### PNG vs HTML routes
+
+| Output | Path style |
 | --- | --- |
-| **PNG** | **Straight lines** between stops — a quick sketch + approximate distance |
-| **HTML** | **Actual road route** — follows streets via OSRM when the file is opened online |
+| **PNG** | Straight lines — quick sketch + approximate distance |
+| **HTML** | Real road route (OSRM, followed when file is opened in a browser) |
 
-If OSRM is unreachable, the HTML falls back to the same straight-line estimate.
+OSRM falls back to straight-line if offline.
 
 ## Two kinds
 
-| Kind | Use when | Output |
+| Kind | When | Output |
 | --- | --- | --- |
-| `map` | “Show these cities”, weather, site list | Markers + values/icons, no path |
-| `route` | “Optimise visit order”, deliveries | Ordered stops + estimated path |
+| `map` | "Show these cities", weather, site list | Markers + values/icons, no path |
+| `route` | "Optimise visit order", deliveries | Ordered stops + path |
 
 ## Point fields
 
 | Field | Notes |
 | --- | --- |
-| `lat` / `lon` | **Always preferred** — from user, prior tools (Dataverse, etc.), or web search |
-| `location` / `address` / `name` | Labels; may match bundled place_lookup |
-| `value` | Label on map/HTML (e.g. `24 C`) |
-| `icon` | `sunny`, `rain`, `office`, `pin`, … |
-| `color` | Optional hex colour |
+| `lat` / `lon` | Always preferred — from user, prior tools, or web search |
+| `name` | Display label |
+| `value` | Metric shown on map (`"24 C"`, `"$1.2M"`) |
+| `icon` | `sunny`, `rain`, `office`, `pin`, … (see icons below) |
+| `color` | Hex colour — validated; invalid values fall back to default |
 
-## Examples
+## Icons
+
+`pin` `sunny` `partly-cloudy` `cloudy` `rain` `storm` `snow` `fog` `wind` `hot` `cold` `office` `home` `factory` `hospital` `school` `warning` `check` `star` `shop` `truck`
+
+## Usage examples
 
 **Weather map**
+> Show Sydney, Bondi, Manly, and Parramatta with today's temperatures and weather icons. HTML too.
 
-> Show Sydney, Bondi, Manly, and Parramatta on a map with today’s temperatures
-> and weather icons. Give me HTML.
+**After Dataverse**
+> Get open service accounts from Dataverse, map them, optimise a visit route, and give me GeoJSON.
 
-*(Agent uses existing lat/lon or web-searches missing ones, then calls the toolkit.)*
-
-**After Dataverse / another tool**
-
-> Get open service accounts from Dataverse, then map them and optimise a visit route.
-
-*(Map latitude/longitude fields from the prior result into `points` / `stops`.)*
-
-**Route**
-
-> Optimise a driving round trip for these five inspection sites. Markdown + map
-> image + interactive HTML.
+**QR codes for mobile**
+> Optimise this delivery route and give me QR codes so drivers can open it on their phones.
 
 ## Dependencies
 
-`matplotlib` for PNG. No outbound network from the script. When a user opens the
-HTML file, the browser loads Leaflet/OSM tiles and (for routes) a road path from
-the public OSRM demo API.
+- `matplotlib` — PNG rendering (required)
+- `qrcode[pil]` — QR code export (optional; `pip install qrcode[pil]`)
+- Browser network — HTML loads Leaflet/OSM tiles and OSRM road routes client-side (no Python outbound calls)

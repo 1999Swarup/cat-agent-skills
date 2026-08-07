@@ -60,8 +60,19 @@ except ImportError as exc:  # pragma: no cover
         "Install with: pip install matplotlib"
     ) from exc
 
+import re as _re
+
+_HEX_COLOUR_RE = _re.compile(r'^#[0-9a-fA-F]{3}(?:[0-9a-fA-F]{3})?$')
+
+
+def _safe_colour(raw: Optional[str], fallback: str = "#0078d4") -> str:
+    """Return raw if it is a valid 3- or 6-digit hex colour, else fallback."""
+    if raw and _HEX_COLOUR_RE.match(raw):
+        return raw
+    return fallback
+
+
 PROFILES = ("driving", "walking", "cycling")
-KINDS = ("auto", "map", "route")
 
 # Approximate urban speeds (m/s) and road-factor vs straight-line distance.
 _SPEED_MPS = {"driving": 35_000 / 3600, "walking": 5_000 / 3600, "cycling": 15_000 / 3600}
@@ -392,7 +403,7 @@ def resolve_points(
                 )
 
         meta = icon_meta(icon)
-        fill = str(color) if color else meta["color"]
+        fill = _safe_colour(str(color) if color else None, meta["color"])
         resolved.append(
             {
                 "name": name,
@@ -622,8 +633,6 @@ def markdown_summary(
     lines += ["", f"![Route map]({chart_path})", "", f"*{foot}*"]
     return "\n".join(lines)
 
-
-markdown_route = markdown_summary  # alias
 
 
 # ── PNG map ────────────────────────────────────────────────────────────────────────────────────
@@ -941,6 +950,7 @@ def save_html(
     profile: str = "driving",
     routing_source: str = "haversine_offline",
     kind: str = "route",
+    deep_links: dict[str, str] | None = None,
 ) -> str:
     """Leaflet + OSM interactive map with markers/icons, optional route, legend."""
     stops_js = json.dumps(
@@ -998,7 +1008,8 @@ def save_html(
         route_btn_display = "none"
         point_word = "points"
 
-    deep_links = build_map_links(ordered, profile=profile, round_trip=round_trip) if is_route else {}
+    if deep_links is None:
+        deep_links = {}
     if deep_links:
         deep_links_html = (
             '<div class="deeplinks">'
@@ -1156,7 +1167,6 @@ def save_html(
 const STOPS = {stops_js};
 const GEOM = {geom_js};
 const ROUND = {str(round_trip).lower()};
-const SOURCE = {json.dumps(routing_source)};
 const PROFILE = {json.dumps(profile)};
 const KIND = {json.dumps(kind)};
 const IS_ROUTE = KIND === 'route';
@@ -1176,18 +1186,23 @@ function fmtDuration(s) {{
   if (h <= 0) return m + ' min';
   return h + ' h ' + m + ' min';
 }}
+function esc(s) {{
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}}
 function setMethod(text) {{
   const el = document.getElementById('methodLabel');
   if (el) el.textContent = text;
 }}
-function setChip(id, html) {{
+function setChip(id, text) {{
   const el = document.getElementById(id);
-  if (el) el.innerHTML = html;
+  if (el) el.textContent = text;
 }}
 
 function markerIcon(s) {{
   const useEmoji = s.icon && s.icon !== 'pin';
-  const inner = useEmoji ? s.emoji : String(s.n);
+  const inner = useEmoji ? esc(s.emoji) : String(s.n);
   const cls = useEmoji ? 'marker-pin icon' : 'marker-pin';
   return L.divIcon({{
     className: '',
@@ -1202,7 +1217,7 @@ const seenIcons = new Map();
 STOPS.forEach((s, i) => {{
   const li = document.createElement('li');
   li.dataset.idx = String(i);
-  const badge = (s.icon && s.icon !== 'pin') ? s.emoji : String(s.n);
+  const badge = (s.icon && s.icon !== 'pin') ? esc(s.emoji) : String(s.n);
   li.innerHTML = `<span class="badge" style="background:${{s.color}}">${{badge}}</span>
     <div><strong>${{s.n}}. ${{s.name}}</strong>
     ${{s.value ? `<div class="val">${{s.value}}</div>` : ''}}
@@ -1250,7 +1265,7 @@ function fallbackRoute() {{
   const latlngs = (GEOM.coordinates || []).map(c => [c[1], c[0]]);
   drawRoute(latlngs, {{ road: false }});
   setMethod('Approximate path (OSRM unavailable) on OpenStreetMap');
-  setChip('chipRouteSrc', '<strong>Offline</strong> straight-line est.');
+  setChip('chipRouteSrc', 'Offline straight-line est.');
 }}
 
 async function loadRoadRoute() {{
@@ -1270,9 +1285,9 @@ async function loadRoadRoute() {{
     const route = data.routes[0];
     const latlngs = (route.geometry.coordinates || []).map(c => [c[1], c[0]]);
     drawRoute(latlngs, {{ road: true }});
-    setChip('chipDistance', '<strong>' + fmtKm(route.distance) + '</strong> distance');
-    setChip('chipDuration', '<strong>' + fmtDuration(route.duration) + '</strong> drive time');
-    setChip('chipRouteSrc', '<strong>OSRM</strong> road path');
+    setChip('chipDistance', fmtKm(route.distance) + ' distance');
+    setChip('chipDuration', fmtDuration(route.duration) + ' drive time');
+    setChip('chipRouteSrc', 'OSRM road path');
     setMethod('Road-following route (OSRM) on OpenStreetMap');
     fitAll();
   }} catch (err) {{
@@ -1714,18 +1729,29 @@ def _map_links_markdown(links: Mapping[str, str], qr_paths: Mapping[str, str] | 
     return "\n".join(lines)
 
 
+_FORMULA_CHARS = frozenset("=+-@|%`")
+
+
+def _csv_cell(val: str) -> str:
+    """Quote a CSV cell; prefix with tab if it starts with a formula trigger char."""
+    safe = val.replace('"', "'")
+    if safe and safe[0] in _FORMULA_CHARS:
+        safe = "\t" + safe
+    return f'"{safe}"'
+
+
 def save_stops_csv(ordered: Sequence[Mapping[str, Any]], out: str) -> str:
+    """Write stop data to CSV; sanitizes formula-injection characters."""
     with open(out, "w", encoding="utf-8") as fh:
         fh.write("sequence,name,lat,lon,location,value,icon\n")
         for i, s in enumerate(ordered, start=1):
-            loc = (
-                s.get("display_name") or s.get("location") or s.get("address") or ""
-            ).replace('"', "'")
-            val = str(s.get("value") or "").replace('"', "'")
+            name = str(s.get("name") or "")
+            loc  = s.get("display_name") or s.get("location") or s.get("address") or ""
+            val  = str(s.get("value") or "")
             icon = str(s.get("icon") or "pin")
             fh.write(
-                f'{i},"{s["name"]}",{s["lat"]:.6f},{s["lon"]:.6f},'
-                f'"{loc}","{val}","{icon}"\n'
+                f'{i},{_csv_cell(name)},{s["lat"]:.6f},{s["lon"]:.6f},'
+                f'{_csv_cell(str(loc))},{_csv_cell(val)},{_csv_cell(icon)}\n'
             )
     return out
 
@@ -1946,6 +1972,14 @@ def generate(data: Mapping[str, Any] | str) -> dict[str, Any]:
 
     if bool(payload.get("html", False)):
         html_path = str(payload.get("html_path", f"{prefix}_map.html"))
+        # Build links now if both html + map_links requested, so save_html can embed them.
+        _html_deep_links: dict[str, str] = {}
+        if bool(payload.get("map_links") or payload.get("maps_links")
+                or payload.get("google_maps") or payload.get("apple_maps") or payload.get("bing_maps")):
+            _html_deep_links = build_map_links(
+                ordered, profile=profile,
+                round_trip=round_trip if kind == "route" else False,
+            )
         save_html(
             ordered,
             route["geometry"],
@@ -1957,6 +1991,7 @@ def generate(data: Mapping[str, Any] | str) -> dict[str, Any]:
             profile=profile,
             routing_source=routing_source,
             kind=kind,
+            deep_links=_html_deep_links,
         )
         result["html_path"] = os.path.abspath(html_path)
 
