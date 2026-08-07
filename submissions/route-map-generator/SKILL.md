@@ -66,7 +66,11 @@ result = generate({
         {"name": "Sydney HQ", "lat": -33.8688, "lon": 151.2093, "value": "24 C", "icon": "sunny"},
         {"name": "Manly depot", "lat": -33.7969, "lon": 151.2870, "value": "21 C", "icon": "cloudy"},
     ],
-    "html": True,
+    # All exports below are opt-in. Add what you need:
+    # "html": True,        # interactive map (OSM + real road route in browser)
+    # "csv": True,         # CSV of stops for spreadsheet / Power Automate
+    # "geojson": True,     # GeoJSON for QGIS / Power BI / ArcGIS
+    # "kml": True,         # KML for Google Earth / My Maps
 })
 
 result = generate({
@@ -77,18 +81,36 @@ result = generate({
     ],
     "round_trip": True,
     "html": True,
-    "map_links": True,   # Google / Apple / Bing deep route links (like geojson/kml)
-    "qr_codes": True,    # QR code PNGs + combined sheet so users can scan on phone
+    "map_links": True,   # Google / Apple / Bing deep route links
+    "qr_codes": True,    # QR code sheet so users can scan on phone
 })
 
 print(result["markdown"])
-# Also available:
-# result["google_maps_url"], result["apple_maps_url"], result["bing_maps_url"]
-# result["qr_sheet_path"]   — path to the combined QR PNG sheet
-# result["qr_paths"]        — dict with individual QR paths per provider
+# result["markdown"] always ends with an "Optional exports" hint block
+# listing any flags that weren't used this run, plus a downstream-actions tip.
+
+# Paths (only set when the export was requested):
+# result["chart_path"]       — PNG (always)
+# result["html_path"]        — HTML (if html: True)
+# result["csv_path"]         — CSV (if csv: True)
+# result["geojson_path"]     — GeoJSON (if geojson: True)
+# result["kml_path"]         — KML (if kml: True)
+# result["map_links_path"]   — JSON deep links (if map_links: True)
+# result["qr_sheet_path"]    — QR sheet PNG (if qr_codes: True)
+# result["google_maps_url"]  / ["apple_maps_url"] / ["bing_maps_url"]
+# result["generated_exports"] — dict of booleans for each export
 ```
 
-5. **Reply.** Paste `result["markdown"]`. Tell the user clearly:
+5. **Reply.** Paste `result["markdown"]`. The markdown already includes:
+   - PNG inline image
+   - Route table
+   - Deep links (if enabled)
+   - QR sheet (if enabled)
+   - **"Optional exports" hint** — a section that lists every flag the user
+     *didn't* enable this run, with a one-line description. Always surface this
+     to the user so they know what else is available.
+
+   Tell the user clearly:
    - **PNG** = straight-line sketch between stops (approximate)
    - **HTML** = actual road-following route (opens in browser; needs network
      for OSRM). Always enable `html: true` for route requests so they get the
@@ -96,11 +118,19 @@ print(result["markdown"])
    - When they ask to open the route in Google / Apple / Bing Maps, set
      `map_links: true` (or the individual provider flags) and include the links.
    - When they ask for a **QR code** to scan on their phone, set both
-     `map_links: true` and `qr_codes: true`. The result includes
-     `result["qr_sheet_path"]` — embed it inline with
-     `![QR codes](result["qr_sheet_path"])`. The user can scan any code to open
-     the route in their preferred app. Requires `qrcode[pil]`
-     (`pip install qrcode[pil]`).
+     `map_links: true` and `qr_codes: true`. Embed `result["qr_sheet_path"]`
+     inline as `![QR codes](path)`. Requires `pip install qrcode[pil]`.
+
+6. **Downstream actions / agent instructions.**  
+   If the user says they want every map to include specific exports (e.g.
+   "always give me GeoJSON" or "I'm sending these to field staff on mobile"),
+   tell them to add the relevant flags to their **agent system instructions** so
+   the agent always sets them. Example instruction text to share with the user:
+
+   > *"When generating maps or routes, always include:*
+   > - *`"html": true` — for the interactive map*
+   > - *`"geojson": true` — so I can load it in Power BI*
+   > - *`"qr_codes": true` — so field staff can scan on their phones"*
 
 ## Icons
 

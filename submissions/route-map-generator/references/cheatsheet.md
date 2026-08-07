@@ -18,15 +18,25 @@ API and draws a **road-following** polyline (real streets).
 
 ## Payload
 
-| Field | Notes |
-| --- | --- |
-| `kind` | `map` \| `route` \| `auto` |
-| `points` / `stops` / `locations` | list of place objects |
-| `html` / `geojson` / `kml` | optional exports |
-| `map_links` | `true` → Google / Apple / Bing deep route URLs (+ JSON file) |
-| `google_maps` / `apple_maps` / `bing_maps` | emit only selected provider link(s) |
-| `qr_codes` | `true` → QR code PNGs per provider + combined sheet (requires `map_links: true`) |
-| `round_trip` / `profile` / `optimize` | route options |
+| Field | Default | Notes |
+| --- | --- | --- |
+| `kind` | `auto` | `map` \| `route` \| `auto` |
+| `points` / `stops` / `locations` | — | list of place objects |
+| `round_trip` / `profile` / `optimize` | — | route options |
+
+### Optional exports — all opt-in
+
+| Flag | Default | What it produces |
+| --- | --- | --- |
+| `"html": true` | off | Interactive OSM map; real road-following route (OSRM, browser-side) |
+| `"csv": true` | off | CSV table of all stops/locations |
+| `"geojson": true` | off | GeoJSON for QGIS, Power BI, ArcGIS, or any GIS tool |
+| `"kml": true` | off | KML for Google Earth / My Maps |
+| `"map_links": true` | off | Deep links to open route in Google Maps, Apple Maps, Bing Maps |
+| `"google_maps"` / `"apple_maps"` / `"bing_maps"` | off | Individual provider deep link only |
+| `"qr_codes": true` | off | QR code PNGs per provider + combined sheet (requires `map_links: true`) |
+
+> **PNG is always generated.** Everything else is off by default — add flags to your payload to enable them.
 
 ### Point object
 
@@ -46,11 +56,16 @@ API and draws a **road-following** polyline (real streets).
 ## CLI
 
 ```bash
-# Weather / marker map
-python scripts/map_generator.py --payload assets/sample_weather_map.json --html
+# Default — PNG only (no optional exports)
+python scripts/map_generator.py --payload assets/sample_weather_map.json
 
-# Route + deep links
-python scripts/map_generator.py --payload assets/sample_stops.json --kind route --html --map-links
+# Add whatever exports you need
+python scripts/map_generator.py --payload assets/sample_stops.json \
+    --kind route --html --csv --geojson --kml
+
+# Route + deep links + QR codes
+python scripts/map_generator.py --payload assets/sample_stops.json \
+    --kind route --html --map-links --qr-codes
 ```
 
 ### Map deep links + QR codes
@@ -71,6 +86,19 @@ print(result["qr_sheet_path"])    # combined PNG — embed with ![QR codes](path
 ```
 
 **Dependency:** `pip install qrcode[pil]`
+
+### Downstream actions / agent instructions
+
+Add flags permanently to an agent's system instructions so every map call
+automatically includes the exports your workflow needs:
+
+> *"When calling the route map generator, always include:*
+> - *`"html": true` for the interactive OSM map*
+> - *`"geojson": true` to load results in Power BI*
+> - *`"qr_codes": true` so field staff can scan on their phones"*
+
+`result["generated_exports"]` — dict of booleans showing which exports were
+produced (useful for conditional downstream logic).
 
 ```bash
 # Route + deep links + QR codes (CLI)

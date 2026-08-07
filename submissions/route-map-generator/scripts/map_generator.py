@@ -1730,8 +1730,67 @@ def save_stops_csv(ordered: Sequence[Mapping[str, Any]], out: str) -> str:
     return out
 
 
-# ── Orchestration ────────────────────────────────────────────────────────────
+def _available_options_markdown(payload: Mapping[str, Any], kind: str) -> str:
+    """Return a brief hint listing optional exports the user has not yet enabled.
 
+    Always appended to result["markdown"] so users and downstream agents can
+    discover what's available and enable it in subsequent calls or agent instructions.
+    """
+    _f = payload.get   # shorthand
+
+    opts: list[tuple[str, str]] = []
+
+    if not _f("html"):
+        road = " — real road-following route in the browser (OSRM)" if kind == "route" else ""
+        opts.append(("html", f'`"html": true` — interactive OpenStreetMap{road}'))
+
+    if not (_f("csv") or _f("csv_path")):
+        opts.append(("csv", '`"csv": true` — CSV table of all stops/locations'))
+
+    if not (_f("geojson") or _f("geojson_path")):
+        opts.append(("geojson", '`"geojson": true` — GeoJSON for QGIS, Power BI, or any GIS tool'))
+
+    if not (_f("kml") or _f("kml_path")):
+        opts.append(("kml", '`"kml": true` — KML for Google Earth / My Maps / ArcGIS'))
+
+    if kind == "route":
+        has_links = any(_f(k) for k in ("map_links", "maps_links",
+                                        "google_maps", "apple_maps", "bing_maps"))
+        if not has_links:
+            opts.append(("map_links",
+                         '`"map_links": true` — deep links to open the route in '
+                         'Google Maps, Apple Maps, and Bing Maps'))
+
+        has_qr = _f("qr_codes") or _f("qr")
+        if not has_qr:
+            opts.append(("qr_codes",
+                         '`"qr_codes": true` — QR code sheet '
+                         '(scan on phone to open the route in any map app)'))
+
+    if not opts:
+        return ""
+
+    lines = [
+        "",
+        "---",
+        "**Optional exports** — not generated this run. "
+        "Add any flag to your payload (or ask the agent) to enable it:",
+        "",
+    ]
+    for _, desc in opts:
+        lines.append(f"- {desc}")
+    lines += [
+        "",
+        "> **Tip for downstream actions:** set these flags permanently in your "
+        "agent's system instructions so every map includes the exports your "
+        "workflow needs — e.g. always output GeoJSON for a Power Automate flow, "
+        "or always include QR codes when the result is sent to a mobile user.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+# ── Orchestration ────────────────────────────────────────────────────────────
 def _as_payload(source: Any) -> dict[str, Any]:
     if isinstance(source, Mapping):
         return dict(source)
@@ -1833,8 +1892,12 @@ def generate(data: Mapping[str, Any] | str) -> dict[str, Any]:
         kind=kind,
     )
 
-    csv_path = str(payload.get("csv_path", f"{prefix}_points.csv"))
-    save_stops_csv(ordered, csv_path)
+    # CSV is opt-in — only written when explicitly requested
+    want_csv = bool(payload.get("csv", False) or payload.get("csv_path"))
+    csv_path: str | None = None
+    if want_csv:
+        csv_path = str(payload.get("csv_path", f"{prefix}_points.csv"))
+        save_stops_csv(ordered, csv_path)
 
     md = markdown_summary(
         ordered,
@@ -1873,7 +1936,7 @@ def generate(data: Mapping[str, Any] | str) -> dict[str, Any]:
         "points": ordered,
         "stops": ordered,
         "chart_path": os.path.abspath(chart_path),
-        "csv_path": os.path.abspath(csv_path),
+        "csv_path": os.path.abspath(csv_path) if csv_path else None,
         "markdown_path": os.path.abspath(md_path),
         "markdown": md,
         "method": method,
@@ -1993,6 +2056,27 @@ def generate(data: Mapping[str, Any] | str) -> dict[str, Any]:
             )
             result["warnings"] = warnings
 
+    # Always append a capability hint for exports that weren't requested yet.
+    # This lets users and downstream agents discover what's available.
+    hint = _available_options_markdown(payload, kind)
+    if hint:
+        full_md = (result["markdown"] or "") + hint
+        result["markdown"] = full_md
+        result["available_options_hint"] = hint
+        with open(md_path, "w", encoding="utf-8") as fh:
+            fh.write(full_md)
+
+    # Collect which optional exports were actually generated this run
+    result["generated_exports"] = {
+        "png":        True,
+        "html":       bool(result.get("html_path")),
+        "csv":        bool(result.get("csv_path")),
+        "geojson":    bool(result.get("geojson_path")),
+        "kml":        bool(result.get("kml_path")),
+        "map_links":  bool(result.get("map_links_path")),
+        "qr_codes":   bool(result.get("qr_sheet_path")),
+    }
+
     return result
 
 
@@ -2019,6 +2103,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--title", default=None)
     p.add_argument("--out-prefix", default=None, dest="out_prefix")
     p.add_argument("--html", action="store_true")
+    p.add_argument("--csv", action="store_true", help="Write a CSV of all stops/locations.")
     p.add_argument("--geojson", action="store_true")
     p.add_argument("--kml", action="store_true")
     p.add_argument(
@@ -2051,6 +2136,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         data["out_prefix"] = args.out_prefix
     if args.html:
         data["html"] = True
+    if args.csv:
+        data["csv"] = True
     if args.geojson:
         data["geojson"] = True
     if args.kml:
@@ -2067,7 +2154,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     print(f"Kind:     {result.get('kind')}")
     print(f"Routing:  {result.get('routing_source')}")
     print(f"PNG:      {result['chart_path']}")
-    print(f"CSV:      {result['csv_path']}")
+    if result.get("csv_path"):
+        print(f"CSV:      {result['csv_path']}")
     if result.get("html_path"):
         print(f"HTML:     {result['html_path']}")
     if result.get("geojson_path"):
@@ -2084,6 +2172,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"Apple:    {result['apple_maps_url']}")
     if result.get("bing_maps_url"):
         print(f"Bing:     {result['bing_maps_url']}")
+    exports = result.get("generated_exports") or {}
+    not_generated = [k for k, v in exports.items() if not v]
+    if not_generated:
+        print(f"Not generated (add flag to enable): {', '.join(not_generated)}")
     for w in result.get("warnings") or []:
         print(f"Warning:  {w}")
 
