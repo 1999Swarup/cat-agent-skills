@@ -1,6 +1,6 @@
 ---
 name: route-map-generator
-description: "Plot locations on a map or optimise multi-stop routes. Use whenever the user asks to map places, show markers with values/icons (weather, CRM records, etc.), optimise visit order, or export a map as PNG/HTML/GeoJSON/KML. Trigger phrases: 'show these on a map', 'weather map for', 'best order to visit', 'optimise this route'. Also use after another tool (Dataverse, SharePoint, CRM, connectors) returns rows that include lat/lon."
+description: "Plot locations on a map or optimise multi-stop routes. Use whenever the user asks to map places, show markers with values/icons (weather, CRM records, etc.), optimise visit order for field workers and onsite teams, or export a map as PNG/HTML/GeoJSON/KML. Trigger phrases: 'show these on a map', 'weather map for', 'best order to visit', 'optimise this route', 'route to deliver field services'. Also use after another tool (Dataverse, SharePoint, CRM, connectors) returns rows that include lat/lon."
 ---
 
 Generates **marker maps** and **optimised routes** via `scripts/map_generator.py`. Fully offline — no outbound HTTP from Python. Coordinates must be in the payload; HTML loads OSM tiles and OSRM road routes in the user's browser.

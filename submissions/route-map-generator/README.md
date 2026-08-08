@@ -3,7 +3,7 @@
 A generic **map + route** skill for Copilot Studio.
 
 - **Maps** — plot locations with optional values and icons (weather, sites, stores, CRM records)
-- **Routes** — optimise multi-stop visit order and draw a path
+- **Routes** — optimise multi-stop visit order and draw a path (route for field workers and teams)
 
 Runs **fully offline** in the Python sandbox. Coordinates come from the user, a **prior tool** (Dataverse, CRM, SharePoint, connectors), or **agent web search**.
 
