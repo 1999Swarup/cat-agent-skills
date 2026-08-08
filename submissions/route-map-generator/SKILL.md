@@ -16,8 +16,8 @@ Generates **marker maps** and **optimised routes** via `scripts/map_generator.py
 | `"auto"` | default; infers map unless `round_trip`/`optimize` hints route |
 
 **2. Resolve coordinates** — per point, in order:
-1. `lat`/`lon` already present — from the user, a prior tool (Dataverse, Dynamics, CRM, lists, CSV, API response), or a prior agent step. **Never overwrite these.**
-2. Alias match in `assets/place_lookup.json` (Sydney-area)
+1. `lat`/`lon` already present — from the user, a prior knowledge source, a prior tool (Dataverse, Dynamics, CRM, lists, CSV, API response), or a prior agent step. **Never overwrite these.**
+2. Alias match in `assets/place_lookup.json`
 3. Web-search the place's lat/lon, then add to payload
 
 Never call external geocoding APIs from the script — they fail in the sandbox. Never invent coordinates.
