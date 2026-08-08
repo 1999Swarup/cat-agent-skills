@@ -1579,10 +1579,13 @@ def _qr_to_image(data: str, box: int = 8, border: int = 4) -> "Image.Image":
     sandbox) so no extra ``pip install`` is required.  Error-correction level M
     (~15 % recovery capacity) is a good default for URLs.
     """
-    from reportlab.graphics.barcode.qrencoder import QRCode, ErrorCorrectLevel
+    try:
+        from reportlab.graphics.barcode.qrencoder import QRCode, QRErrorCorrectLevel as _ECL
+    except ImportError:
+        from reportlab.graphics.barcode.qrencoder import QRCode, ErrorCorrectLevel as _ECL  # type: ignore[no-redef]
     from PIL import Image as _Image
 
-    qr = QRCode(None, ErrorCorrectLevel.M)   # None = auto-select version
+    qr = QRCode(None, _ECL.M)   # None = auto-select version
     qr.addData(data)
     qr.make()
     matrix = qr.modules                       # list[list[bool]]
