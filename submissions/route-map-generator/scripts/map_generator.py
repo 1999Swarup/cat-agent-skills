@@ -1572,6 +1572,35 @@ def save_map_links(
     return out
 
 
+def _qr_to_image(data: str, box: int = 8, border: int = 4) -> "Image.Image":
+    """Rasterise *data* to a QR-code PIL Image using reportlab + Pillow.
+
+    Uses ``reportlab.graphics.barcode.qrencoder`` (always available in the
+    sandbox) so no extra ``pip install`` is required.  Error-correction level M
+    (~15 % recovery capacity) is a good default for URLs.
+    """
+    from reportlab.graphics.barcode.qrencoder import QRCode, ErrorCorrectLevel
+    from PIL import Image as _Image
+
+    qr = QRCode(None, ErrorCorrectLevel.M)   # None = auto-select version
+    qr.addData(data)
+    qr.make()
+    matrix = qr.modules                       # list[list[bool]]
+    n      = len(matrix)
+    side   = (n + 2 * border) * box
+    img    = _Image.new("RGB", (side, side), "white")
+    pixels = img.load()
+    for r, row in enumerate(matrix):
+        for c, dark in enumerate(row):
+            if dark:
+                px = (border + c) * box
+                py = (border + r) * box
+                for dy in range(box):
+                    for dx in range(box):
+                        pixels[px + dx, py + dy] = (0, 0, 0)
+    return img
+
+
 def save_qr_codes(
     links: Mapping[str, str],
     *,
@@ -1584,20 +1613,15 @@ def save_qr_codes(
     (individual files) and ``sheet`` (combined image), all pointing to absolute
     file paths.  Any key whose link is absent is omitted from the result.
 
-    Requires ``qrcode[pil]`` (``pip install qrcode[pil]``).
+    Uses ``reportlab`` + ``Pillow`` — both pre-installed in the sandbox.
     """
-    try:
-        import qrcode
-        from PIL import Image, ImageDraw, ImageFont
-    except ImportError as exc:  # pragma: no cover
-        raise ImportError(
-            "QR code generation requires 'qrcode[pil]': pip install qrcode[pil]"
-        ) from exc
+    from PIL import Image, ImageDraw, ImageFont
 
-    LABELS: list[tuple[str, str]] = [
-        ("google_maps", "Google Maps"),
-        ("apple_maps", "Apple Maps"),
-        ("bing_maps", "Bing Maps"),
+    # (dict-key, short filename label, display label)
+    LABELS: list[tuple[str, str, str]] = [
+        ("google_maps", "google", "Google Maps"),
+        ("apple_maps",  "apple",  "Apple Maps"),
+        ("bing_maps",   "bing",   "Bing Maps"),
     ]
     QR_SIZE = 280        # px per individual QR image (data area)
     MARGIN  = 20         # px margin inside each cell
@@ -1609,25 +1633,17 @@ def save_qr_codes(
     MUTED   = (96,  94,  92)
 
     paths: dict[str, str] = {}
-    cells: list[tuple[Image.Image, str]] = []   # (qr_img, label) for sheet
+    cells: list[tuple[Image.Image, str]] = []   # (qr_img, display_label) for sheet
 
-    for key, label in LABELS:
+    for key, short, label in LABELS:
         url = links.get(key)
         if not url:
             continue
 
-        qr = qrcode.QRCode(
-            version=None,
-            error_correction=qrcode.constants.ERROR_CORRECT_M,
-            box_size=8,
-            border=3,
-        )
-        qr.add_data(url)
-        qr.make(fit=True)
-        img: Image.Image = qr.make_image(fill_color="black", back_color="white").convert("RGB")
+        img: Image.Image = _qr_to_image(url)
         img = img.resize((QR_SIZE, QR_SIZE), Image.NEAREST)
 
-        dest = os.path.abspath(f"{prefix}_qr_{key}.png")
+        dest = os.path.abspath(f"{prefix}_qr_{short}.png")
         img.save(dest, "PNG")
         paths[key] = dest
         cells.append((img, label))
@@ -1645,25 +1661,23 @@ def save_qr_codes(
 
     # Try to load a legible system font; fall back to default
     font_large: ImageFont.ImageFont | ImageFont.FreeTypeFont
-    font_small: ImageFont.ImageFont | ImageFont.FreeTypeFont
+    font_title: ImageFont.ImageFont | ImageFont.FreeTypeFont
     try:
         font_large = ImageFont.truetype("arial.ttf",  16)
-        font_sm2   = ImageFont.truetype("arial.ttf",  13)
         font_title = ImageFont.truetype("arialbd.ttf", 18)
     except OSError:
         try:
             font_large = ImageFont.truetype("DejaVuSans.ttf", 16)
-            font_sm2   = ImageFont.truetype("DejaVuSans.ttf", 13)
             font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", 18)
         except OSError:
-            font_large = font_sm2 = font_title = ImageFont.load_default()
+            font_large = font_title = ImageFont.load_default()
 
     # Title bar
     if title:
-        short = title if len(title) <= 55 else title[:52] + "…"
-        bbox = draw.textbbox((0, 0), short, font=font_title)
+        title_text = title if len(title) <= 55 else title[:52] + "…"
+        bbox = draw.textbbox((0, 0), title_text, font=font_title)
         tw   = bbox[2] - bbox[0]
-        draw.text(((sheet_w - tw) // 2, 14), short, fill=FG, font=font_title)
+        draw.text(((sheet_w - tw) // 2, 14), title_text, fill=FG, font=font_title)
         draw.line([(0, TITLE_H - 2), (sheet_w, TITLE_H - 2)], fill=(220, 210, 206), width=1)
 
     # QR cells

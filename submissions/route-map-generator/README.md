@@ -17,7 +17,7 @@ Runs **fully offline** in the Python sandbox. Coordinates come from the user, a 
 | GeoJSON | `geojson: true` | For QGIS, Power BI, ArcGIS |
 | KML | `kml: true` | For Google Earth, My Maps |
 | Map deep links | `map_links: true` | Google Maps, Apple Maps, Bing Maps |
-| QR codes | `qr_codes: true` | Scannable PNG sheet; requires `map_links: true` and `qrcode[pil]` |
+| QR codes | `qr_codes: true` | Scannable PNG sheet; requires `map_links: true` |
 
 **All exports except PNG are off by default.** Every response includes an "Optional exports" hint listing unused flags.
 
@@ -65,5 +65,5 @@ OSRM falls back to straight-line if offline.
 ## Dependencies
 
 - `matplotlib` — PNG rendering (required)
-- `qrcode[pil]` — QR code export (optional; `pip install qrcode[pil]`)
+- `reportlab` + `Pillow` — QR code export (both pre-installed in the sandbox; no extra install needed)
 - Browser network — HTML loads Leaflet/OSM tiles and OSRM road routes client-side (no Python outbound calls)

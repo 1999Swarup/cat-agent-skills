@@ -85,7 +85,7 @@ print(result["qr_sheet_path"])    # combined PNG — embed with ![QR codes](path
 # result["qr_paths"] has individual paths: google_maps, apple_maps, bing_maps
 ```
 
-**Dependency:** `pip install qrcode[pil]`
+**Dependency:** built-in — uses `reportlab` + `Pillow` (both pre-installed in the sandbox)
 
 ### Downstream actions / agent instructions
 
