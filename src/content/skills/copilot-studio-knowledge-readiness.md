@@ -24,13 +24,13 @@ Load on demand — do not read these up front.
 
 | File | Load when |
 |---|---|
-| `scripts/references/knowledge-vs-action-decision-tree.md` | Classifying any item as knowledge, instruction, workflow, action, or skill (step 3). |
-| `scripts/references/readiness-rubric.md` | Scoring the source (step 4). Required for every assessment. |
-| `scripts/references/chunking-guidance.md` | Producing chunking recommendations or diagnosing retrieval-quality issues. |
-| `scripts/references/metadata-schema.md` | Producing metadata recommendations or when the user asks what fields to tag. |
-| `scripts/assets/readiness-report-template.md` | Producing the final assessment artifact. Fill this in rather than composing from memory. |
-| `scripts/assets/cleanup-backlog-template.csv` | Producing the cleanup backlog as a tracked artifact (Excel/Planner-friendly). Use instead of an inline markdown table when the user wants to import or share it. |
-| `scripts/assets/test-prompts-template.md` | Producing the test-prompt suite at the end of an assessment. |
+| `references/knowledge-vs-action-decision-tree.md` | Classifying any item as knowledge, instruction, workflow, action, or skill (step 3). |
+| `references/readiness-rubric.md` | Scoring the source (step 4). Required for every assessment. |
+| `references/chunking-guidance.md` | Producing chunking recommendations or diagnosing retrieval-quality issues. |
+| `references/metadata-schema.md` | Producing metadata recommendations or when the user asks what fields to tag. |
+| `assets/readiness-report-template.md` | Producing the final assessment artifact. Fill this in rather than composing from memory. |
+| `assets/cleanup-backlog-template.csv` | Producing the cleanup backlog as a tracked artifact (Excel/Planner-friendly). Use instead of an inline markdown table when the user wants to import or share it. |
+| `assets/test-prompts-template.md` | Producing the test-prompt suite at the end of an assessment. |
 
 ## Workflow
 
@@ -38,12 +38,12 @@ Track progress against this checklist:
 
 - [ ] 1. Frame the assessment (scenario, audience, boundary, assumptions)
 - [ ] 2. Inventory sources
-- [ ] 3. Classify content role (load `scripts/references/knowledge-vs-action-decision-tree.md`)
-- [ ] 4. Score readiness (load `scripts/references/readiness-rubric.md`)
+- [ ] 3. Classify content role (load `references/knowledge-vs-action-decision-tree.md`)
+- [ ] 4. Score readiness (load `references/readiness-rubric.md`)
 - [ ] 5. Detect risks (use the Gotchas list below)
-- [ ] 6. Recommend remediation (load `scripts/assets/cleanup-backlog-template.csv` if exporting)
-- [ ] 7. Produce the report (load `scripts/assets/readiness-report-template.md`)
-- [ ] 8. Produce test prompts (load `scripts/assets/test-prompts-template.md`)
+- [ ] 6. Recommend remediation (load `assets/cleanup-backlog-template.csv` if exporting)
+- [ ] 7. Produce the report (load `assets/readiness-report-template.md`)
+- [ ] 8. Produce test prompts (load `assets/test-prompts-template.md`)
 
 ### 1. Frame
 
@@ -63,11 +63,11 @@ Decide whether each item should be modeled as:
 - **Workflow** — deterministic guided flow.
 - **Action** — operation that reads live data, writes records, starts approvals, creates tickets, sends notifications, or checks status.
 
-Load `scripts/references/knowledge-vs-action-decision-tree.md` and walk each item through it.
+Load `references/knowledge-vs-action-decision-tree.md` and walk each item through it.
 
 ### 4. Score readiness
 
-Load `scripts/references/readiness-rubric.md`. Always emit category scores and a total, but mark categories that require external evidence as `not assessed` unless the user supplied that evidence.
+Load `references/readiness-rubric.md`. Always emit category scores and a total, but mark categories that require external evidence as `not assessed` unless the user supplied that evidence.
 
 ### 5. Detect risks
 
@@ -75,15 +75,15 @@ Prioritize risks you can substantiate from the supplied corpus: conflicting answ
 
 ### 6. Recommend remediation
 
-Prioritized backlog with severity, owner role, effort, and recommended fix. Maker-actionable, not abstract. If the user wants a trackable artifact, fill `scripts/assets/cleanup-backlog-template.csv` instead of an inline table.
+Prioritized backlog with severity, owner role, effort, and recommended fix. Maker-actionable, not abstract. If the user wants a trackable artifact, fill `assets/cleanup-backlog-template.csv` instead of an inline table.
 
 ### 7 & 8. Produce artifacts
 
-Fill `scripts/assets/readiness-report-template.md` for the report and `scripts/assets/test-prompts-template.md` for the validation prompts. Do not reconstruct these from memory — open the template files and substitute.
+Fill `assets/readiness-report-template.md` for the report and `assets/test-prompts-template.md` for the validation prompts. Do not reconstruct these from memory — open the template files and substitute.
 
 ## Readiness recommendation bands
 
-See `scripts/references/readiness-rubric.md` for the canonical bands and scoring formula.
+See `references/readiness-rubric.md` for the canonical bands and scoring formula.
 
 Override: if the supplied evidence shows any high-severity **permission or sensitivity** issue, do not recommend production even if the numeric score is high. This overrides the band. If permissions were not assessable from the evidence, say so explicitly instead of implying they were reviewed.
 
