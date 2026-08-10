@@ -46,8 +46,20 @@ estimate.
    after-hours assumptions, or synthetic scores.
 
 5. Write the aggregate object to a temporary `safe-signalboard.json`. Resolve
-   the installed skill directory and use absolute paths; do not assume the
-   current working directory. Validate before rendering:
+   the installed skill directory from the absolute resource path supplied by
+   the skill loader; do not search the filesystem or assume the current working
+   directory. Replace the example skill path below with that resolved path,
+   initialize both variables, and verify them before rendering. Never run the
+   later commands with an empty variable or the literal example path.
+
+   ```bash
+   SIGNALBOARD_SKILL="/resolved/absolute/path/to/work-iq-signalboard"
+   SIGNALBOARD_TMP="$(mktemp -d)"
+   test -f "$SIGNALBOARD_SKILL/scripts/render_signalboard.py"
+   test -d "$SIGNALBOARD_TMP"
+   ```
+
+   Validate the aggregate:
 
    ```bash
    python "$SIGNALBOARD_SKILL/scripts/render_signalboard.py" \

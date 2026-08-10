@@ -88,8 +88,20 @@ still spills:
 
 ## Rendering from any working directory
 
-Resolve the directory containing `SKILL.md`, then use absolute paths for the
-renderer, temporary JSON, and created HTML. For example:
+Use the absolute resource path supplied by the skill loader to resolve the
+directory containing `SKILL.md`; do not search the filesystem or infer it from
+the current working directory. Replace the example path below with the resolved
+path, initialize both variables, and verify them before use. Never run the later
+commands with an empty variable or the literal example path.
+
+```bash
+SIGNALBOARD_SKILL="/resolved/absolute/path/to/work-iq-signalboard"
+SIGNALBOARD_TMP="$(mktemp -d)"
+test -f "$SIGNALBOARD_SKILL/scripts/render_signalboard.py"
+test -d "$SIGNALBOARD_TMP"
+```
+
+Then validate and render with absolute paths:
 
 ```bash
 python "$SIGNALBOARD_SKILL/scripts/render_signalboard.py" \
