@@ -1024,15 +1024,6 @@ def save_png(
     plt.close(fig)
     return out
 
-    ax.text(0.01, 0.012, footer, transform=ax.transAxes,
-            fontsize=7.5, color="#8a8886", ha="left", va="bottom", zorder=7)
-
-    fig.savefig(out, facecolor=fig.get_facecolor(), pad_inches=0.22,
-                bbox_inches="tight")
-    plt.close(fig)
-    return out
-
-
 
 # ── Interactive HTML (Leaflet + OpenStreetMap) ───────────────────────────────
 
