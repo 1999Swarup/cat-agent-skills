@@ -39893,7 +39893,7 @@ function buildVerdictTemplate(results) {
 }
 
 // src/index.ts
-var VERSION2 = "0.2.0";
+var VERSION2 = "1.0.0";
 var MIN_NODE_MAJOR = 22;
 var nodeMajor = Number(process.versions.node.split(".")[0]);
 if (Number.isFinite(nodeMajor) && nodeMajor < MIN_NODE_MAJOR) {

@@ -67,11 +67,11 @@ Ask: **"test my Copilot Studio agent with these questions"** and give it your fi
 Or drive it yourself:
 
 ```
-scripts\cs-agent-test.cmd convert  my-questions.docx testset.csv
-scripts\cs-agent-test.cmd test     testset.csv --out .\results
-scripts\cs-agent-test.cmd report   .\results\results-<ts>.json --template verdicts.csv
+node scripts/cs-agent-test.cjs convert  my-questions.docx testset.csv
+node scripts/cs-agent-test.cjs test     testset.csv --out .\results
+node scripts/cs-agent-test.cjs report   .\results\results-<ts>.json --template verdicts.csv
 REM   ... fill in PASS / FAIL / EXCLUDED and a reason for each row ...
-scripts\cs-agent-test.cmd report   .\results\results-<ts>.json report.md --verdicts verdicts.csv
+node scripts/cs-agent-test.cjs report   .\results\results-<ts>.json report.md --verdicts verdicts.csv
 ```
 
 On macOS or Linux use `sh scripts/cs-agent-test.sh`, or `node scripts/cs-agent-test.cjs`

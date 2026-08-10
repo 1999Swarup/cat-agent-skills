@@ -15,15 +15,17 @@ Each question runs in a **fresh conversation** — the programmatic equivalent o
 > **Requires Node.js 22 or later.** There is no bundled executable — the tool is a single
 > JavaScript file, so nothing unsigned is executed and endpoint policy has nothing to block.
 >
-> Run it through the launcher for the platform, relative to this skill's directory:
+> Invoke it from this skill's directory. **Prefer the `node` form** — it is identical on
+> Windows, macOS and Linux, and works in every shell:
 >
-> | Platform | Command |
-> |---|---|
-> | Windows | `scripts\cs-agent-test.cmd <command>` |
-> | macOS / Linux | `sh scripts/cs-agent-test.sh <command>` |
-> | Any | `node scripts/cs-agent-test.cjs <command>` |
+> ```
+> node scripts/cs-agent-test.cjs <command>
+> ```
 >
-> Examples below use the Windows launcher. Substitute the right one for the user's platform.
+> Convenience launchers exist if you would rather not type `node`:
+> `.\scripts\cs-agent-test.cmd` on Windows, `sh scripts/cs-agent-test.sh` elsewhere.
+>
+> Examples below use the `node` form, so they can be copied as-is on any platform.
 >
 > **Check Node first.** If `node --version` fails or reports below v22, stop and tell the user
 > to install Node.js 22+ from https://nodejs.org — every command will fail until they do.
@@ -91,11 +93,11 @@ app registration yet, walk them through it:
 **Then write the config:**
 
 ```
-scripts\cs-agent-test.cmd setup --client-id <guid> --tenant-id <guid> ^
+node scripts/cs-agent-test.cjs setup --client-id <guid> --tenant-id <guid> ^
                                 --environment-id <guid> --schema-name <name>
 
 REM classic agents only, if they had the Native app connection string:
-scripts\cs-agent-test.cmd setup --client-id <guid> --tenant-id <guid> ^
+node scripts/cs-agent-test.cjs setup --client-id <guid> --tenant-id <guid> ^
                                 --connection-string "<pasted url>"
 ```
 
@@ -105,7 +107,7 @@ Read the values back to the user before saving — a typo'd schema name fails qu
 rather create the app registration guided step by step:
 
 ```
-scripts\cs-agent-test.cmd setup
+node scripts/cs-agent-test.cjs setup
 ```
 
 It also accepts the connection string (press Enter to skip and type the values instead), and
@@ -114,8 +116,8 @@ needs a real terminal; if stdin is not a TTY it says so and stops rather than ha
 Then:
 
 ```
-scripts\cs-agent-test.cmd login     # device code — needs a human at a browser
-scripts\cs-agent-test.cmd doctor    # verifies config, sign-in and connectivity
+node scripts/cs-agent-test.cjs login     # device code — needs a human at a browser
+node scripts/cs-agent-test.cjs doctor    # verifies config, sign-in and connectivity
 ```
 
 `doctor` is the fastest way to diagnose a problem. Run it before anything else if a command fails.
@@ -123,8 +125,8 @@ scripts\cs-agent-test.cmd doctor    # verifies config, sign-in and connectivity
 ## Usage
 
 ```
-scripts\cs-agent-test.cmd ask "What is the company car policy?"
-scripts\cs-agent-test.cmd test questions.csv --out .\results
+node scripts/cs-agent-test.cjs ask "What is the company car policy?"
+node scripts/cs-agent-test.cjs test questions.csv --out .\results
 
 # flags
 --limit 5          # first N questions only
@@ -173,8 +175,8 @@ results stay attributable to a knowledge base) or one combined run.
 Convert Word documents rather than retyping:
 
 ```
-scripts\cs-agent-test.cmd convert "<their-file>.docx" testset.csv
-scripts\cs-agent-test.cmd convert "<their-file>.docx" --dry-run   REM preview first
+node scripts/cs-agent-test.cjs convert "<their-file>.docx" testset.csv
+node scripts/cs-agent-test.cjs convert "<their-file>.docx" --dry-run   REM preview first
 ```
 
 This reads **two-column tables**: question in column 1, expected answer in column 2. A header
@@ -187,7 +189,7 @@ not a two-column table, do not fight the converter — write the CSV yourself in
 ### Step 2 — run the questions
 
 ```
-scripts\cs-agent-test.cmd test carpolicy.csv --out .\results
+node scripts/cs-agent-test.cjs test carpolicy.csv --out .\results
 ```
 
 On a large set, run `--limit 3` first to confirm connectivity before committing to a long run.
@@ -202,7 +204,7 @@ the results JSON against its `expected` value** and decide the verdict yourself.
 Get a pre-filled sheet to work from:
 
 ```
-scripts\cs-agent-test.cmd report .\results\results-<ts>.json --template verdicts.csv
+node scripts/cs-agent-test.cjs report .\results\results-<ts>.json --template verdicts.csv
 ```
 
 Then fill in one row per question — `id`, `verdict`, `reason`:
@@ -231,7 +233,7 @@ a 30-day return window; the policy says 14 days"*, not *"incorrect"*.
 ### Step 4 — build the report
 
 ```
-scripts\cs-agent-test.cmd report .\results\results-<ts>.json report.md ^
+node scripts/cs-agent-test.cjs report .\results\results-<ts>.json report.md ^
         --verdicts verdicts.csv --title "HR agent evaluation" --subject "KB_CarPolicy"
 ```
 

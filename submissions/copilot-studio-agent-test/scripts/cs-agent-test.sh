@@ -12,5 +12,5 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
-DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)
 exec node "$DIR/cs-agent-test.cjs" "$@"
