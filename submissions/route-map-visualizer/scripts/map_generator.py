@@ -1334,9 +1334,9 @@ STOPS.forEach((s, i) => {{
   li.dataset.idx = String(i);
   const badge = (s.icon && s.icon !== 'pin') ? esc(s.emoji) : String(s.n);
   li.innerHTML = `<span class="badge" style="background:${{s.color}}">${{badge}}</span>
-    <div><strong>${{s.n}}. ${{s.name}}</strong>
-    ${{s.value ? `<div class="val">${{s.value}}</div>` : ''}}
-    <div class="meta">${{s.display || (s.lat.toFixed(5)+', '+s.lon.toFixed(5))}}</div></div>`;
+    <div><strong>${{s.n}}. ${{esc(s.name)}}</strong>
+    ${{s.value ? `<div class="val">${{esc(s.value)}}</div>` : ''}}
+    <div class="meta">${{esc(s.display || (s.lat.toFixed(5)+', '+s.lon.toFixed(5)))}}</div></div>`;
   li.addEventListener('click', () => focusStop(i));
   list.appendChild(li);
   if (!seenIcons.has(s.icon)) seenIcons.set(s.icon, s);
@@ -1344,7 +1344,7 @@ STOPS.forEach((s, i) => {{
 if (IS_ROUTE && ROUND && STOPS.length) {{
   const li = document.createElement('li');
   li.innerHTML = `<span class="badge" style="background:#8764b8">↩</span>
-    <div><strong>Return to start</strong><div class="meta">Back to 1. ${{STOPS[0].name}}</div></div>`;
+    <div><strong>Return to start</strong><div class="meta">Back to 1. ${{esc(STOPS[0].name)}}</div></div>`;
   li.addEventListener('click', () => focusStop(0));
   list.appendChild(li);
 }}
