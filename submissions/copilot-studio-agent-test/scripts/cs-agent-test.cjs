@@ -27642,7 +27642,9 @@ function agenticRuntimeUrl(environmentId, schemaName) {
   const e = environmentId.replace(/-/g, "").toLowerCase();
   return `https://${e.slice(0, 30)}.${e.slice(30)}.environment.api.powerplatform.com/copilotstudio/agenticruntime/3p/dataverse-backed/authenticated/bots/${schemaName}?api-version=1`;
 }
-var REQUIRED = ["appClientId", "tenantId", "environmentId", "schemaName"];
+var REQUIRED_AUTH = ["appClientId", "tenantId"];
+var REQUIRED_TARGET = ["environmentId", "schemaName"];
+var REQUIRED = [...REQUIRED_AUTH, ...REQUIRED_TARGET];
 var ConfigMissingError = class extends Error {
   constructor() {
     super("No configuration found.");
@@ -27668,7 +27670,7 @@ function resolveConfig() {
     runtime: process.env.RUNTIME ?? process.env.runtime,
     directConnectUrl: process.env.DIRECT_CONNECT_URL ?? process.env.directConnectUrl
   };
-  const envComplete = Boolean(fromEnv.directConnectUrl) || REQUIRED.every((k) => fromEnv[k]);
+  const envComplete = fromEnv.directConnectUrl ? REQUIRED_AUTH.every((k) => fromEnv[k]) : REQUIRED.every((k) => fromEnv[k]);
   if (envComplete) return validate(fromEnv, "environment / .env");
   if ((0, import_node_fs2.existsSync)(USER_CONFIG_PATH)) {
     const saved = JSON.parse((0, import_node_fs2.readFileSync)(USER_CONFIG_PATH, "utf8"));
@@ -27681,8 +27683,8 @@ function resolveConfig() {
   throw new ConfigMissingError();
 }
 function validate(cfg, source) {
-  if (cfg.directConnectUrl) return cfg;
-  const missing = REQUIRED.filter((k) => !cfg[k]);
+  const required = cfg.directConnectUrl ? REQUIRED_AUTH : REQUIRED;
+  const missing = required.filter((k) => !cfg[k]);
   if (missing.length) {
     throw new Error(
       `Incomplete configuration from ${source}. Missing: ${missing.join(", ")}.
