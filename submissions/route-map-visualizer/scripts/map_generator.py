@@ -2012,6 +2012,10 @@ def generate(data: Mapping[str, Any] | str) -> dict[str, Any]:
         or ("Route" if kind == "route" else "Map")
     )
     prefix = str(payload.get("out_prefix", "map" if kind == "map" else "route"))
+    # Sample payloads use out/... — ensure the parent exists before any writes.
+    _prefix_dir = os.path.dirname(prefix)
+    if _prefix_dir:
+        os.makedirs(_prefix_dir, exist_ok=True)
     lookup_path = payload.get("place_lookup_path")
 
     # ── Connector-provided route data ─────────────────────────────────────────
