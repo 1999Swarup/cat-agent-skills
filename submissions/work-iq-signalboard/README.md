@@ -12,15 +12,16 @@ Ask:
 > Show me my Work IQ Signalboard.
 
 The skill turns four weeks of Microsoft 365 activity into a colorful,
-self-contained dashboard covering meetings, mail flow, Teams chats, files, and
-weekly rhythm. The result is a single HTML file you can open, download, or put
-straight on the big screen.
+self-contained dashboard covering meetings, mail flow, Teams chats, and weekly
+rhythm. The result is a single HTML file you can open, download, or put straight
+on the big screen.
 
 ## Real signals, no filler
 
 The board shows the numbers behind the pattern: meeting count and hours, sent
-versus received mail, Teams chat messages, files touched, calendar rhythm, and
-four weekly totals that reconcile with the 28-day count.
+versus received mail, Teams chat messages, calendar rhythm, and four weekly
+totals that reconcile with the 28-day count. A short AI reflection closes the
+board without turning activity into a productivity score.
 
 It counts the work without displaying the work. Names, subjects, message text,
 filenames, links, projects, customers, and exact dates stay out.
@@ -46,3 +47,7 @@ a connection for the signed-in user, and the required spending policy.
 The skill uses a rolling 28-day window, works around the preview harness's
 collection caps, reports missing sources, and produces the dashboard without
 external web resources.
+
+Files are outside the current Signalboard scope. Work IQ preview does not expose
+an exhaustible recent-file activity feed, so the skill does not guess from a
+partial folder listing or search result.

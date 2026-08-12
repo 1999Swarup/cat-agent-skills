@@ -12,8 +12,7 @@ fields are rejected.
   "coverage": {
     "calendar": "complete",
     "mail": "complete",
-    "teams": "chats-only",
-    "files": "unavailable"
+    "teams": "chats-only"
   },
   "activity": {
     "meeting_days": 12,
@@ -22,8 +21,7 @@ fields are rejected.
     "emails_sent": 18,
     "emails_received": 974,
     "teams_chat_messages": 41,
-    "teams_channel_messages": 0,
-    "files_touched": 0
+    "teams_channel_messages": 0
   },
   "calendar_rhythm": {
     "mon": [1, 2, 3, 0],
@@ -42,13 +40,22 @@ fields are rejected.
 
 ## Allowed values
 
-- Calendar, mail, and files coverage: `complete` or `unavailable`.
+- Calendar and mail coverage: `complete` or `unavailable`.
 - Teams coverage: `chats-only`, `chats-and-channels`, or `unavailable`.
 - Counts: non-negative integers. `meeting_days` must be `0`–`28`.
 - Hours: `0`–`1000` in half-hour increments.
 - Calendar rhythm: integers `0`–`3` for Monday–Friday and the time bands
   morning, midday, afternoon, and evening.
 - Weekly counts: exactly four non-negative integers, oldest week first.
+
+Use the event's returned local time for the Calendar rhythm bands:
+
+- morning: before `12:00`;
+- midday: `12:00`–`13:59`;
+- afternoon: `14:00`–`17:59`; and
+- evening: `18:00` or later.
+
+Split an event's minutes when it crosses a band boundary.
 
 Use zero only for a measured zero. When a source is unavailable, set its stored
 values to zero; the renderer uses coverage to display **No data**, never `0`.
@@ -67,8 +74,8 @@ instead of estimating.
 
 ## Definitions
 
-- `meeting_days`: distinct dates containing at least one non-declined calendar
-  event. Persist only the total, never the dates.
+- `meeting_days`: distinct dates containing at least one non-declined,
+  non-cancelled calendar event. Persist only the total, never the dates.
 - `meetings`: non-declined, non-cancelled calendar events in the 28-day window.
 - `meeting_hours`: scheduled duration of those events, rounded to the nearest
   half hour.
@@ -78,8 +85,6 @@ instead of estimating.
 - `teams_chat_messages`: messages in 1:1 and group chats.
 - `teams_channel_messages`: channel posts and replies. Keep this at zero with
   `chats-only`; the renderer labels the scope explicitly.
-- `files_touched`: unique files created or edited by the signed-in user. Do not
-  use search-result length as this count.
 - `calendar_rhythm`: allocate meeting minutes into weekday/time-band cells.
   Set empty cells to `0`; split non-empty cells into thirds of the largest cell
   for levels `1`, `2`, and `3`.

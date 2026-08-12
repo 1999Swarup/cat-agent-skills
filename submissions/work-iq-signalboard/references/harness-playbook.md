@@ -6,7 +6,7 @@ operation.
 
 ## Ground rules
 
-1. Query one source at a time: Calendar, Mail, Teams chats, then Files.
+1. Query one source at a time: Calendar, Mail, then Teams chats.
 2. Request only fields needed for arithmetic. Never request subjects, bodies,
    attendees, organizer, location, names, addresses, filenames, or web URLs.
 3. Treat the fetch tool's `Results limited to 10/50/100 items per collection`
@@ -30,6 +30,9 @@ weekly counts, duration, meeting days, and the rhythm heatmap. If a weekly
 window hits the harness cap, split it into smaller half-open time windows until
 each response is below the cap. Exclude cancelled and declined events. Verify
 the four weekly counts sum to the 28-day count.
+
+For the rhythm heatmap, use each event's returned local time and the exact bands
+defined in `safe-schema.md`. Split minutes when an event crosses a band boundary.
 
 Never request `attendees` merely to estimate group size.
 
@@ -65,14 +68,6 @@ exhausted, mark Teams unavailable. The default successful scope is
 `chats-only`; do not enumerate channels unless the user explicitly requests the
 slower `/me/joinedTeams` → channels → messages traversal. Never label a
 chats-only count as including channels.
-
-## Files
-
-Try `/me/drive/recent` once with only stable identifiers and modification times.
-If it is denied, capped without an exhaustible time filter, or cannot establish
-a unique 28-day edit count, set Files to `unavailable` and stop querying that
-source. Do not substitute OneDrive search-result length; search does not provide
-a trustworthy count in this harness.
 
 ## Automatic spill files
 
