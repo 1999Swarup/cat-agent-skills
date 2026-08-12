@@ -1425,7 +1425,7 @@ STOPS.forEach((s, i) => {{
 }});
 
 function labelText(s) {{
-  return s.value ? (s.name + ' · ' + s.value) : s.name;
+  return s.value ? (esc(s.name) + ' · ' + esc(s.value)) : esc(s.name);
 }}
 function applyLabels(on) {{
   markers.forEach((m, i) => {{
