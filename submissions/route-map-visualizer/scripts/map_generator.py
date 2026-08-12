@@ -1416,9 +1416,9 @@ async function loadRoadRoute() {{
 
 STOPS.forEach((s, i) => {{
   const m = L.marker([s.lat, s.lon], {{ icon: markerIcon(s), riseOnHover: true }});
-  const valHtml = s.value ? `<div style="margin-top:4px"><strong>${{s.value}}</strong></div>` : '';
-  m.bindPopup(`<strong>${{s.n}}. ${{s.name}}</strong>${{valHtml}}
-    <div style="color:#605e5c;margin-top:4px">${{s.display || ''}}</div>`);
+  const valHtml = s.value ? `<div style="margin-top:4px"><strong>${{esc(s.value)}}</strong></div>` : '';
+  m.bindPopup(`<strong>${{s.n}}. ${{esc(s.name)}}</strong>${{valHtml}}
+    <div style="color:#605e5c;margin-top:4px">${{esc(s.display || '')}}</div>`);
   m.on('click', () => highlightList(i));
   m.addTo(map);
   markers.push(m);
