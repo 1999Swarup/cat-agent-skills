@@ -363,6 +363,7 @@ def _finish(scan_json: Path, out_dir: Path, scan_name: str, manifest: Dict[str, 
         "target_name": os.environ.get("AGENT_IDENTIFIER", "SIMULATED-TARGET" if simulated else "Copilot Studio agent"),
         "environment": os.environ.get("TARGET_ENVIRONMENT", "Simulation" if simulated else "Unspecified"),
         "threshold": manifest.get("scoring", {}).get("threshold", 0.05),
+        "failOnAnyAgenticRisk": manifest.get("scoring", {}).get("failOnAnyAgenticRisk", True),
         "scan_name": scan_name,
     }
     html_path, md_path = build_report(scan_json, out_dir, meta)
