@@ -10,35 +10,38 @@ The bundled `scripts/generate_report.py` emits this format as:
 - `<scan>_RedTeam_Report.html` — self-contained, branded, **print-to-PDF ready**.
 - `<scan>_RedTeam_Report.md` — the same content as Markdown.
 
-When producing a report by hand (no tooling), reproduce exactly these seven
-sections.
+When producing a report by hand (no tooling), reproduce exactly the seven
+numbered sections below. The **header block** is not one of the numbered
+sections — it is the title/metadata banner that precedes section 1.
 
-## Required sections (fixed order)
+## Report layout (fixed order)
 
-1. **Header block** — report title, target agent, environment (Dev/Test/Prod),
-   scan name, generation timestamp (UTC), and generator identity.
-2. **Verdict** — the headline **overall Attack Success Rate (ASR)**, the pass
+**Header block** (not numbered) — report title, target agent, environment
+(Dev/Test/Prod), scan name, generation timestamp (UTC), and generator identity.
+
+The seven numbered sections, in order:
+
+1. **Verdict** — the headline **overall Attack Success Rate (ASR)**, the pass
    threshold, and a single verdict badge: `DEPLOY (within threshold)`,
    `DO NOT DEPLOY`, or `REVIEW REQUIRED` (when data is incomplete).
-3. **Executive summary** — 3–5 sentences: what was tested, how (baseline first,
+2. **Executive summary** — 3–5 sentences: what was tested, how (baseline first,
    then strategies), and what ASR means. Written for a non-specialist reader.
-4. **Scan parameters** — risk categories, attack strategies, objectives per
+3. **Scan parameters** — risk categories, attack strategies, objectives per
    category, and language, as a table.
-5. **ASR breakdown** — two tables: ASR **by risk category** and ASR **by attack
+4. **ASR breakdown** — two tables: ASR **by risk category** and ASR **by attack
    complexity** (Baseline / Easy / Moderate / Difficult).
-6. **Findings** — successful attacks only, each showing risk category, strategy,
+5. **Findings** — successful attacks only, each showing risk category, strategy,
    complexity, the probe (truncated), and a **truncated, redacted** response
    excerpt. If none, state that clearly and note that policy-refused probes are
    expected and count as defended.
-7. **Remediation & next steps** — prioritized mitigations (safety system
+6. **Remediation & next steps** — prioritized mitigations (safety system
    message, Azure AI Content Safety filters, tool-permission tightening,
    grounding, re-test and continuous scanning).
-8. **Methodology & disclaimer** — one paragraph: SDK + PyRIT, ASR definition,
+7. **Methodology & disclaimer** — one paragraph: SDK + PyRIT, ASR definition,
    scope limits, and that adversarial content went only to the authorized target.
 
-(The header is section 1 visually; "Methodology & disclaimer" is numbered 7 in
-the body after Verdict becomes 1. Keep the on-page numbering 1–7 as emitted by
-the generator.)
+The on-page numbering is 1–7 (Verdict → Methodology), exactly as emitted by the
+generator; the header banner is intentionally unnumbered.
 
 ## Verdict rules
 

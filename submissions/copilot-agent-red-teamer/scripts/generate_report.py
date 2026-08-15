@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -125,8 +126,32 @@ def _verdict(overall_asr: Optional[float], threshold_pct: float) -> Tuple[str, s
     return ("DEPLOY (within threshold)", "pass")
 
 
+_REDACTIONS = [
+    (re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"), "[redacted-email]"),
+    (re.compile(r"\b(?:sk|pk|rk)-[A-Za-z0-9]{16,}\b"), "[redacted-key]"),
+    (re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"), "[redacted-aws-key]"),
+    (re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b"), "[redacted-jwt]"),
+    (re.compile(r"(?i)\b(?:bearer|token|api[_-]?key|password|passwd|secret|connectionstring)\b\s*[:=]\s*\S+"),
+     "[redacted-secret]"),
+    (re.compile(r"(?i)(?:Endpoint|AccountKey|SharedAccessKey|Pwd|Password)=[^;\s]+"), "[redacted-secret]"),
+    (re.compile(r"\b(?:\d[ -]?){13,19}\b"), "[redacted-number]"),
+]
+
+
+def _redact(text: str) -> str:
+    """Best-effort redaction of secrets/PII before storing findings on disk."""
+    for pattern, replacement in _REDACTIONS:
+        text = pattern.sub(replacement, text)
+    return text
+
+
 def _extract_findings(records: List[Any], limit: int = 15) -> List[Dict[str, str]]:
-    """Pull successful attacks as findings. Defensive across record shapes."""
+    """Pull successful attacks as findings. Defensive across record shapes.
+
+    Prompt and response excerpts are redacted (secrets/PII masked) and truncated
+    before they are stored, so the report never persists leaked credentials or
+    personal data even if the target emitted them.
+    """
     findings: List[Dict[str, str]] = []
     for r in records:
         if not isinstance(r, dict):
@@ -138,8 +163,8 @@ def _extract_findings(records: List[Any], limit: int = 15) -> List[Dict[str, str
         risk = _first(r, "risk_category", "risk_type", "risk") or "Unknown"
         strategy = _first(r, "attack_strategy", "strategy", "attack_technique") or "Unknown"
         complexity = _first(r, "attack_complexity", "complexity") or ""
-        prompt = str(_first(r, "attack_prompt", "prompt", "query", "objective") or "")
-        response = str(_first(r, "response", "target_response", "answer") or "")
+        prompt = _redact(str(_first(r, "attack_prompt", "prompt", "query", "objective") or ""))
+        response = _redact(str(_first(r, "response", "target_response", "answer") or ""))
         if success is None and not _first(r, "attack_success", "success", "is_successful"):
             # no explicit success flag; skip to avoid over-reporting
             continue

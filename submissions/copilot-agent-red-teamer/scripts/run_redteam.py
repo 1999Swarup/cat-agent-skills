@@ -129,8 +129,25 @@ def build_risk_categories(names: List[str]) -> List[Any]:
     for name in ("ProtectedMaterial", "CodeVulnerability", "UngroundedAttributes"):
         if hasattr(RiskCategory, name):
             mapping[name] = getattr(RiskCategory, name)
-    cats = [mapping[n] for n in _clean(names) if n in mapping]
-    return cats or [RiskCategory.Violence, RiskCategory.HateUnfairness, RiskCategory.Sexual, RiskCategory.SelfHarm]
+
+    requested = _clean(names)
+    cats = [mapping[n] for n in requested if n in mapping]
+    unmapped = [n for n in requested if n not in mapping]
+
+    if unmapped:
+        # Do NOT silently fall back — that would run a different scan than
+        # requested and produce misleading results (e.g. the agentic-risk scan,
+        # whose categories are not supported by the local RedTeam SDK).
+        print(f"[warn] risk categories not supported by the local RedTeam SDK: {', '.join(unmapped)}")
+    if not cats:
+        raise SystemExit(
+            "None of the requested risk categories are supported by the local "
+            f"RedTeam SDK: {', '.join(requested) or '(none)'}. Supported: "
+            f"{', '.join(mapping.keys())}. Agentic-risk categories "
+            "(ProhibitedActions, SensitiveDataLeakage, TaskAdherence) require a "
+            "cloud/agentic scan, not this local runner. Adjust the manifest scope."
+        )
+    return cats
 
 
 def build_attack_strategies(names: List[str]) -> List[Any]:
@@ -161,7 +178,14 @@ def build_attack_strategies(names: List[str]) -> List[Any]:
 
 def make_target_callback():
     """Return an async callback that forwards a probe to the Copilot Studio
-    agent and returns its reply in OpenAI chat-protocol shape."""
+    agent and returns its reply in OpenAI chat-protocol shape.
+
+    The Copilot Studio client (and its MSAL token) is created **once per scan**
+    and reused across every probe. Only a fresh single-turn conversation is
+    started per probe, which keeps probes isolated while avoiding repeated auth,
+    token-cache reads, and client setup that would slow large scans and increase
+    throttling/failure rates.
+    """
     from copilot_studio_client import McsCopilotClient, McsConnectionSettings, ActivityTypes
 
     connection = McsConnectionSettings(
@@ -170,6 +194,8 @@ def make_target_callback():
         environment_id=os.environ.get("ENVIRONMENT_ID"),
         agent_identifier=os.environ.get("AGENT_IDENTIFIER"),
     )
+    # Created once and reused across all probe calls in this scan.
+    client = McsCopilotClient(connection_settings=connection)
 
     async def copilot_studio_agent_callback(
         messages: list,
@@ -180,7 +206,7 @@ def make_target_callback():
         messages_list = [{"role": m.role, "content": m.content} for m in messages]
         latest = messages_list[-1]["content"]
         try:
-            client = McsCopilotClient(connection_settings=connection)
+            # Fresh single-turn conversation per probe; the client/token is reused.
             await client.start_conversation_async()
             activities = await client.ask_question_async(latest)
             text = "".join(a.text for a in activities if getattr(a, "type", None) == ActivityTypes.message)
