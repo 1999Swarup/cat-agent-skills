@@ -40,6 +40,30 @@ _TOKEN_CACHE_PATH = Path(os.path.expanduser("~")) / ".mcs_redteam_token_cache.bi
 _SCOPE = ["https://api.powerplatform.com/.default"]
 
 
+def _write_token_cache(cache: "msal.SerializableTokenCache") -> None:
+    """Persist the MSAL token cache with owner-only permissions.
+
+    The cache can contain refresh tokens, so it must not be world-readable on a
+    shared machine. We create the file with 0o600 (owner read/write only) before
+    writing and re-assert the mode afterwards. On Windows, POSIX mode bits are
+    advisory; for stronger protection there, prefer msal-extensions'
+    encrypted/persisted cache (PersistedTokenCache with a DPAPI-backed store).
+    """
+    data = cache.serialize().encode("utf-8")
+    # Open with O_CREAT|O_WRONLY|O_TRUNC and a restrictive mode so the file is
+    # never briefly created world-readable.
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    fd = os.open(str(_TOKEN_CACHE_PATH), flags, 0o600)
+    try:
+        os.write(fd, data)
+    finally:
+        os.close(fd)
+    try:
+        os.chmod(_TOKEN_CACHE_PATH, 0o600)
+    except OSError:
+        pass  # best-effort on platforms where chmod is a no-op
+
+
 class McsConnectionSettings:
     """Connection settings for a published Copilot Studio agent."""
 
@@ -64,7 +88,7 @@ def _acquire_token(settings: McsConnectionSettings) -> str:
     """Acquire an access token via MSAL, using a persistent on-disk cache."""
     cache = msal.SerializableTokenCache()
     if _TOKEN_CACHE_PATH.exists():
-        cache.deserialize(_TOKEN_CACHE_PATH.read_text())
+        cache.deserialize(_TOKEN_CACHE_PATH.read_text(encoding="utf-8"))
 
     app = msal.PublicClientApplication(
         client_id=settings.app_client_id,
@@ -83,7 +107,7 @@ def _acquire_token(settings: McsConnectionSettings) -> str:
         result = app.acquire_token_interactive(scopes=_SCOPE)
 
     if cache.has_state_changed:
-        _TOKEN_CACHE_PATH.write_text(cache.serialize())
+        _write_token_cache(cache)
 
     if "access_token" not in result:
         raise RuntimeError(
