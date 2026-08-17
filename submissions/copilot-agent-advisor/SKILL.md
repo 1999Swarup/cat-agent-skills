@@ -93,12 +93,13 @@ If the scenario straddles standard and custom, lead with the **lighter** option 
 
 ### Phase 3: Which Copilot Studio harness to build on
 
-When the recommendation involves building in Copilot Studio, also advise the **harness** — the runtime that sits between your agent and the model, deciding when to call the model, what components to send it, and which tools to invoke. Copilot Studio documents three:
+When the recommendation involves building in Copilot Studio, also advise the **harness** — the runtime that sits between your agent and the model, deciding when to call the model, what components to send it, and which tools to invoke. Copilot Studio documents three (see [References](#references) for the authoritative, current comparison):
 
 - **GitHub Copilot harness — the most capable, for reasoning-heavy work.** Takes a goal, breaks it into steps, and calls tools across connectors, knowledge, MCP, and connected agents, adjusting when a step fails. Natively creates and edits Word, Excel, PowerPoint, and PDF files, supports **skills** and **memory**, and runs each task in a governed sandbox. Billed with **Copilot Credits**. Recommend it for complex, multi-step business processes that work across tools and files (e.g. an accounts-payable agent that reads invoices, matches purchase orders, and routes exceptions).
 - **Standard harness — dependable and rule-based.** You define the topics, prompts, and paths so a structured, repeatable conversation or workflow responds **predictably**, drawing on your prompt library and enterprise knowledge. Billed via **standard-harness licensing**. Recommend it when the scenario is well-defined and you want consistent answers (e.g. an internal help-desk agent that answers common questions and routes simple requests).
 - **Copilot chat harness — for extending Microsoft 365 Copilot Chat.** Connects your enterprise knowledge to M365 Copilot Chat so employees get grounded answers without leaving their everyday experience; publishes to internal teams. Billing is consumption-based or included in the Microsoft 365 Copilot user subscription. Recommend it when the priority is connecting people to information (e.g. an onboarding agent grounded on SharePoint knowledge).
 - **Always warn:** agents aren't transferable between the **GitHub Copilot** and **standard** harnesses (different runtimes), and the harnesses bill differently, so the choice should be deliberate. You switch which harness you build on via the **New experience** toggle on the Copilot Studio home page.
+- **Depth boundary.** Advise the harness at a *decision* level — which one and why. For detailed Copilot Credit / licensing estimates, capacity math, or channel-and-identity implementation checks, hand off to a dedicated harness-selection skill or to Microsoft Learn rather than computing them here. This skill's job is the earlier, broader call — *whether to build at all* and *which agent type* — with the harness as one downstream step.
 
 ### Phase 4: Recommend
 
@@ -124,3 +125,15 @@ Offer a quick comparison table (or a card, if the platform renders them) only wh
 - **Never fabricate** feature availability, limits, or pricing. If you're unsure, say so and point to Microsoft Learn rather than guessing.
 - **Ask only load-bearing questions.** Only ask a clarifying question for a factor that would actually change the recommendation; otherwise state a reasonable assumption and proceed.
 - **Explain trade-offs, don't oversell.** Flag the cost, hosting, and compliance-ownership burden of custom engine agents, and the scope limits of declarative agents, so the user chooses with eyes open.
+
+## References
+
+Ground harness and agent-type claims on current Microsoft Learn documentation. Verify volatile details (previews, pricing, Copilot Credits) against these before asserting, and note the date checked when the platform can browse the web.
+
+- **Choose a harness (GitHub Copilot, standard, Copilot chat):** https://learn.microsoft.com/en-us/microsoft-copilot-studio/harnesses-overview
+- **Access standard vs GitHub Copilot harness (switching, what changes):** https://learn.microsoft.com/en-us/microsoft-copilot-studio/agents-experience/switch-experiences
+- **Copilot Studio licensing & Copilot Credits:** https://learn.microsoft.com/en-us/microsoft-copilot-studio/billing-licensing
+
+## Platform compatibility
+
+This skill is platform-neutral — its logic is pure advisory reasoning with no dependency on any platform-specific tool. Clarifying questions, comparison tables, and optional web lookups are described as *capabilities* ("if the platform supports it / can browse the web"), so it runs the same in **Cowork**, **Copilot Studio**, and **Scout**. The `cowork:` frontmatter only supplies a card category/icon in Cowork and is safely ignored elsewhere.

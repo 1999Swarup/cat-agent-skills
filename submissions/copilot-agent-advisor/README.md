@@ -37,4 +37,13 @@ Then it returns a clear recommendation with the reasoning tied to your specifics
 
 - **It advises — it doesn't build.** It recommends the choice; it won't provision, configure, or deploy the agent.
 - **It stays current.** Agent capabilities and previews move fast, so it verifies fast-moving specifics against Microsoft Learn before asserting them.
-- Grounded in Microsoft Learn's declarative-vs-custom-engine decision guidance and the Copilot Studio harness overview (GitHub Copilot, standard, and Copilot chat harnesses).
+- **Works everywhere.** Platform-neutral — the same advisory logic runs in **Cowork**, **Copilot Studio**, and **Scout**, with no dependency on platform-specific tools.
+- Grounded in Microsoft Learn's declarative-vs-custom-engine decision guidance and the Copilot Studio [harnesses overview](https://learn.microsoft.com/en-us/microsoft-copilot-studio/harnesses-overview) (GitHub Copilot, standard, and Copilot chat harnesses).
+
+## How this differs from similar skills
+
+This skill owns the **earliest, broadest** decision — *should you build at all, and which of the three agent types?* — and treats the harness as one downstream step, so it complements rather than duplicates the more specialized skills:
+
+- **Copilot Studio Harness Picker** goes deep on *only* the harness choice (Copilot Credit / licensing estimates, channel-and-identity implementation checks) once you've already decided to build in Copilot Studio. This skill hands off to that depth instead of reproducing it.
+- **Microsoft AI Platform Advisor** picks across the wider Microsoft AI platform (Foundry, Agent 365, etc.). This skill stays focused on the M365 Copilot / Copilot Studio agent-type decision.
+- It's also the only one of these that runs on **Scout** in addition to Cowork and Copilot Studio.
