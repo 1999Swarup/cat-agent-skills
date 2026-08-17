@@ -4,10 +4,10 @@ description: |
   Recommends which Microsoft 365 / Copilot Studio agent option fits a described
   scenario — using Microsoft 365 Copilot as-is, building a standard (declarative)
   agent, or building a custom (custom engine) agent — and which Copilot Studio
-  authoring experience to use (the new/modern experience vs classic). Use when
+  harness to build on (GitHub Copilot, standard, or Copilot chat). Use when
   the user asks "which agent type should I build", "declarative vs custom engine
   agent", "standard agent or custom agent", "should I use Copilot Studio or
-  Microsoft 365 Copilot", "new agent experience vs classic", "help me choose a
+  Microsoft 365 Copilot", "which Copilot Studio harness", "help me choose a
   Copilot agent", or describes an agent scenario and wants a recommendation.
   Do NOT use to actually build, deploy, configure, or write code for an agent,
   and do NOT use for non-agent product comparisons — this skill only advises on
@@ -25,8 +25,8 @@ Microsoft 365 + Copilot Studio ecosystem. It gathers the handful of factors that
 actually drive the decision (data sources, models, orchestration, channels,
 autonomy, collaboration, compliance, and skill/speed), maps them to one of three
 options, and returns a clear, reasoned recommendation with a runner-up and how to
-build it. It also advises which Copilot Studio **authoring experience** (new vs
-classic) to use.
+build it. It also advises which Copilot Studio **harness** (GitHub Copilot,
+standard, or Copilot chat) to build on.
 
 The three options it chooses between:
 
@@ -40,7 +40,7 @@ The three options it chooses between:
 
 - The user describes an agent/automation scenario and asks what to build.
 - The user asks to compare declarative vs custom engine agents, standard vs custom agents, or Copilot Studio vs plain Microsoft 365 Copilot.
-- The user asks whether to author in the Copilot Studio new (modern) experience or the classic experience.
+- The user asks which Copilot Studio harness to build on (GitHub Copilot, standard, or Copilot chat).
 - The user is unsure whether they even need to build an agent at all.
 
 ## When NOT to Use
@@ -91,13 +91,14 @@ Evaluate in order; the first block that clearly matches is the recommendation.
 
 If the scenario straddles standard and custom, lead with the **lighter** option that still meets every hard requirement, and name the specific factor(s) that would push it to custom.
 
-### Phase 3: Which Copilot Studio authoring experience (new vs classic)
+### Phase 3: Which Copilot Studio harness to build on
 
-When the recommendation involves building in Copilot Studio, also advise the experience:
+When the recommendation involves building in Copilot Studio, also advise the **harness** — the runtime that sits between your agent and the model, deciding when to call the model, what components to send it, and which tools to invoke. Copilot Studio documents three:
 
-- **New (modern) experience — the default for new agents.** Authoring starts from a natural-language description of the agent's purpose; a single consolidated surface holds identity, knowledge, tools, skills, and settings; behavior is driven by **instructions and reasoning** rather than explicit topic flows; all agents use the **enhanced orchestration runtime** (deeper reasoning, better answers, especially over Microsoft 365 data); and Evaluate + Monitor tabs are built into the authoring loop. Recommend it when the user is creating a new agent, wants a simpler instruction-based model, or is primarily reasoning over organizational/Microsoft 365 data.
-- **Classic experience.** Topic/flow/branching-based design with explicit nodes and a choice of classic vs generative orchestration modes. Recommend it only when the user needs **precise, deterministic control** over each conversation step, relies on mature features not yet in the new experience, or is maintaining/extending an agent already built in classic.
-- **Always warn:** there is **no migration path** between the two experiences (different architectures/runtimes), so the choice should be deliberate. Existing classic agents keep working, and the user can switch experiences at any time to build new agents.
+- **GitHub Copilot harness — the most capable, for reasoning-heavy work.** Takes a goal, breaks it into steps, and calls tools across connectors, knowledge, MCP, and connected agents, adjusting when a step fails. Natively creates and edits Word, Excel, PowerPoint, and PDF files, supports **skills** and **memory**, and runs each task in a governed sandbox. Billed with **Copilot Credits**. Recommend it for complex, multi-step business processes that work across tools and files (e.g. an accounts-payable agent that reads invoices, matches purchase orders, and routes exceptions).
+- **Standard harness — dependable and rule-based.** You define the topics, prompts, and paths so a structured, repeatable conversation or workflow responds **predictably**, drawing on your prompt library and enterprise knowledge. Billed via **standard-harness licensing**. Recommend it when the scenario is well-defined and you want consistent answers (e.g. an internal help-desk agent that answers common questions and routes simple requests).
+- **Copilot chat harness — for extending Microsoft 365 Copilot Chat.** Connects your enterprise knowledge to M365 Copilot Chat so employees get grounded answers without leaving their everyday experience; publishes to internal teams. Billing is consumption-based or included in the Microsoft 365 Copilot user subscription. Recommend it when the priority is connecting people to information (e.g. an onboarding agent grounded on SharePoint knowledge).
+- **Always warn:** agents aren't transferable between the **GitHub Copilot** and **standard** harnesses (different runtimes), and the harnesses bill differently, so the choice should be deliberate. You switch which harness you build on via the **New experience** toggle on the Copilot Studio home page.
 
 ### Phase 4: Recommend
 
@@ -109,7 +110,7 @@ Respond inline (no file unless asked) with:
 
 1. **Recommendation** — one primary option, stated plainly in the first line.
 2. **Why** — 2-4 bullets tying the recommendation to the user's specific factors (name them).
-3. **Authoring experience** — new vs classic, with the no-migration caveat when relevant.
+3. **Harness** — GitHub Copilot, standard, or Copilot chat, with the not-transferable-between-harnesses caveat when relevant.
 4. **Runner-up / when to reconsider** — the next-best option and the single factor that would flip the decision.
 5. **How to build it** — the tooling path (low-code Copilot Studio / Agent Builder, or pro-code Microsoft 365 Agents Toolkit / Visual Studio Code, plus hosting note for custom engine agents).
 6. **Caveats** — cost/hosting and compliance ownership for custom engine agents; that capabilities evolve and specifics should be confirmed on Microsoft Learn.
