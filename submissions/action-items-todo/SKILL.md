@@ -17,9 +17,10 @@ Monitors Teams chats, meeting transcripts, and Outlook mail for action items EXP
 Nothing about the user (name, email, list name, schedule, customer and workstream names) is hardcoded. Everything lives in the config file written by SETUP.
 
 == FILES ==
+Both live in the user's home directory, so write them with the platform's own separator and never hardcode a Windows path:
 - CONFIG: <user home>/.scout/action-items-todo/config.json
 - STATE (dedupe + last scan): <user home>/.scout/action-items-todo/state.json
-Create the directory if missing. Write both files as UTF-8 JSON, atomically (temp file then rename). Always preserve unknown fields.
+Resolve <user home> at runtime (Node os.homedir(), $HOME, or %USERPROFILE% on Windows). Create the directory if missing. Write both files as UTF-8 JSON, atomically (temp file then rename). Always preserve unknown fields.
 
 == CONFIG SCHEMA ==
 {
@@ -28,7 +29,7 @@ Create the directory if missing. Write both files as UTF-8 JSON, atomically (tem
   "listName": str,                  // the Microsoft To Do list tasks are written to
   "frequency": str,                 // natural-language interval, e.g. "every 30 minutes"
   "schedule": "24/7" | "weekdays-allhours" | "workhours" | str,
-  "timeZone": str,                  // IANA zone, from the machine
+  "timeZone": str,                  // IANA zone name, e.g. "Europe/Berlin"
   "language": "en",                 // task titles are always written in this language
   "owners": { "customers": [str], "workstreams": [str] },   // optional, may be empty
   "excludedChats": [str],           // chat/channel names to always ignore
@@ -46,7 +47,7 @@ Create the directory if missing. Write both files as UTF-8 JSON, atomically (tem
 Run SETUP automatically whenever CONFIG is missing or setupCompleted is null. Never run a scan before SETUP completes.
 
 1. Call workiq_get_my_profile and fill identity. If it fails, say so and stop; the skill cannot target asks without knowing who the user is.
-2. Read the machine time zone (PowerShell Get-TimeZone) and store the IANA name.
+2. Read the machine time zone as an IANA name with a cross-platform runtime API: Intl.DateTimeFormat().resolvedOptions().timeZone, e.g. `node -p "Intl.DateTimeFormat().resolvedOptions().timeZone"`. Do NOT use PowerShell Get-TimeZone: on Windows it returns a Windows zone ID such as "W. Europe Standard Time", which is not an IANA name and will not match the format the rest of the skill expects. If the lookup fails, ask the user for their IANA zone rather than guessing.
 3. Read the user's existing lists with workiq_list_task_lists, then ask QUESTION 1 with m_ask_user, free-text mode, inputHint "list name, e.g. Work":
    "Which Microsoft To Do list should captured action items go into?"
    Show the existing list names in the assistant message BEFORE the call so the user can pick one or name a new one. After the reply: if the list does not exist, confirm creation, then workiq_create_task_list.

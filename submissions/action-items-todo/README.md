@@ -57,7 +57,7 @@ The skill ranks chats by the timestamp of the most recent message rather than th
 
 Tasks go to your own Microsoft To Do. Notifications go to your own Teams self-chat. The skill never messages anyone else and never forwards the content of a source message.
 
-Configuration and dedupe state live in `%USERPROFILE%\.scout\action-items-todo\`. Delete that folder to reset the skill completely.
+Configuration and dedupe state live under your home directory, in `.scout/action-items-todo/`. Delete that folder to reset the skill completely.
 
 ## Requirements
 
