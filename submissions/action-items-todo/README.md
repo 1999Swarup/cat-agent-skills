@@ -12,7 +12,7 @@ Invoke the skill once and it asks three questions:
 2. How often to scan: every 15 minutes, 30 minutes, hour, or 2 hours.
 3. When to scan: around the clock every day, around the clock on weekdays, working hours on weekdays, or a schedule you describe in your own words.
 
-The around-the-clock option exists because plenty of people work across time zones, where a 9-to-5 scan window misses half the day. Pick whichever matches how you actually work.
+The around-the-clock option exists because plenty of people work across time zones, where a 9-to-5 scan window misses half the day.
 
 Setup writes a config file, then creates the recurring automation for you. Nothing scans before setup finishes.
 
@@ -22,7 +22,7 @@ An action item is anything asking you to do, decide, respond, review, attend, pr
 
 The ask has to be aimed at you specifically. That means you are named, you are @mentioned, it arrived in a 1:1 chat, or the surrounding conversation clearly puts the item on your plate. Generic group requests, FYIs, status updates, newsletters, and notifications are skipped.
 
-Two things it deliberately does not do: it will not treat a topic in your area as an implied assignment, and it will not capture your own promises. Commitments you make to other people are a different problem from asks other people make of you, and mixing them produces a task list you stop trusting.
+Two things it deliberately does not do: it will not treat a topic in your area as an implied assignment, and it will not capture your own promises. Commitments you make to other people have different failure modes, and combining both kinds in one list makes both harder to act on.
 
 Task titles are always written in English, even when the source message is not.
 
@@ -30,7 +30,7 @@ Task titles are always written in English, even when the source message is not.
 
 - **Due date** from an explicit or clearly implied deadline, otherwise today.
 - **Priority** from detected urgency. High for blockers, escalations, ASAP language, or a deadline inside two days. Low for tentative or far-future asks. Normal for everything else.
-- **Owner tagging** as a single `Customer:` or `Workstream:` line at the top of the task body. When the evidence is thin the line is left off, because an untagged task is easy to find and fix while a wrongly tagged one quietly hides in the wrong account.
+- **Owner tagging** as a single `Customer:` or `Workstream:` line at the top of the task body. When the evidence is thin the line is left off, because an untagged task still appears in the list while a task filed against the wrong account does not.
 - **Source link** back to the original Teams message, meeting, or email.
 
 ## Commands
@@ -51,7 +51,7 @@ Two fields in `config.json` are not covered by the wizard:
 
 ## A note on Teams recency
 
-The skill ranks chats by the timestamp of the most recent message rather than the chat's `lastUpdatedDateTime`. Microsoft Graph frequently fails to advance `lastUpdatedDateTime` on 1:1 chats, so a chat with a message from this morning can report a last-updated date from two years ago and sink to the bottom of the list. During testing this affected several chats containing real, unanswered asks. If you build something similar, this is the detail that will bite you.
+The skill ranks chats by the timestamp of the most recent message rather than the chat's `lastUpdatedDateTime`. Microsoft Graph frequently fails to advance `lastUpdatedDateTime` on 1:1 chats, so a chat with a message from this morning can report a last-updated date from two years ago and sink to the bottom of the list. During testing this affected several chats containing real, unanswered asks.
 
 ## Privacy
 
