@@ -17,8 +17,8 @@ Monitors Teams chats, meeting transcripts, and Outlook mail for action items EXP
 Nothing about the user (name, email, list name, schedule, customer and workstream names) is hardcoded. Everything lives in the config file written by SETUP.
 
 == FILES ==
-- CONFIG: %USERPROFILE%\.scout\action-items-todo\config.json
-- STATE (dedupe + last scan): %USERPROFILE%\.scout\action-items-todo\state.json
+- CONFIG: <user home>/.scout/action-items-todo/config.json
+- STATE (dedupe + last scan): <user home>/.scout/action-items-todo/state.json
 Create the directory if missing. Write both files as UTF-8 JSON, atomically (temp file then rename). Always preserve unknown fields.
 
 == CONFIG SCHEMA ==
