@@ -5,6 +5,15 @@
   blocks, then (on the GitHub Copilot harness) exports this HTML to PDF natively.
   Section order is FIXED. There is one results row per guardrail control tested.
   All CSS is inline so the file is self-contained and print-to-PDF ready.
+
+  SECURITY - MANDATORY ESCAPING: Target responses, agent names, and summaries are
+  attacker-controlled. HTML-escape EVERY value before substitution
+  (& -> &amp;, < -> &lt;, > -> &gt;, " -> &quot;, ' -> &#39;), including all
+  {{PLACEHOLDER}} values and the text inside the generated [[CONTROL_ROWS]],
+  [[FINDINGS]], and [[REMEDIATION]] blocks. Build those blocks from the fixed
+  allowlisted <tr>/.finding/<li> structure and insert only escaped text - never
+  paste raw target output as markup. Unescaped markup can execute when the report
+  is opened or shared. See references/REPORT-FORMAT.md ("Escaping").
 -->
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

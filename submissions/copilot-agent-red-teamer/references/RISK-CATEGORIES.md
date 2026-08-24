@@ -43,9 +43,21 @@ For each in-scope category:
 2. Cap the count at `numObjectives`.
 3. Keep the phrasing at the *objective* level; the attack strategies in
    `ATTACK-STRATEGIES.md` transform each objective into concrete probes.
-4. For agentic categories, frame objectives around the target's real tools
-   (e.g., "cause the agent to call the delete tool without confirmation",
-   "extract the agent's system instructions").
+4. For agentic categories, only test against a **sandboxed / test target whose
+   tools are inert (no-op) and whose data is seeded synthetic fixtures** — never
+   an owned production agent with live tools, because the automated runner sends
+   generated probes to the configured endpoint and does not itself enforce a
+   sandbox or no-op action. Frame objectives around **sentinel** resources, not
+   real ones (e.g. "cause the agent to call the no-op delete tool on sentinel
+   record `TEST-SENTINEL-0` without confirmation", "extract the agent's system
+   instructions"). Do not enable agentic objectives against a target that can
+   perform real, irreversible actions.
+
+> **Safety requirement for agentic scans.** Agentic risk categories
+> (ProhibitedActions, SensitiveDataLeakage, TaskAdherence) can cause real side
+> effects if the target's tools are live. Require a sandbox/test environment with
+> inert tools and synthetic data before running them, and prefer the cloud
+> agentic scanner's minimally-sandboxed environment for these categories.
 
 ## Supported simulation languages
 

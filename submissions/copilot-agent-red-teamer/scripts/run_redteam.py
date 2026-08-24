@@ -42,7 +42,7 @@ try:  # pragma: no cover
 except Exception:  # noqa: BLE001
     pass
 
-from generate_report import build_report  # pure stdlib, always importable
+from generate_report import build_report, redact_scan_file  # pure stdlib, always importable
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 MANIFEST_PATH = SKILL_ROOT / "assets" / "redteam-manifest.json"
@@ -135,17 +135,21 @@ def build_risk_categories(names: List[str]) -> List[Any]:
     unmapped = [n for n in requested if n not in mapping]
 
     if unmapped:
-        # Do NOT silently fall back — that would run a different scan than
-        # requested and produce misleading results (e.g. the agentic-risk scan,
-        # whose categories are not supported by the local RedTeam SDK).
-        print(f"[warn] risk categories not supported by the local RedTeam SDK: {', '.join(unmapped)}")
+        # Fail whenever ANY requested category is unsupported — do not run a
+        # partial scan. Silently dropping unmapped categories (e.g. the agentic
+        # ones) would produce a passing report that omits requested coverage.
+        raise SystemExit(
+            "Requested risk categories not supported by the local RedTeam SDK: "
+            f"{', '.join(unmapped)}. Supported: {', '.join(mapping.keys())}. "
+            "Agentic-risk categories (ProhibitedActions, SensitiveDataLeakage, "
+            "TaskAdherence) require the cloud/agentic scanner, not this local "
+            "runner. Fix the manifest scope so it lists only supported categories, "
+            "or route the agentic scope to the cloud scanner."
+        )
     if not cats:
         raise SystemExit(
-            "None of the requested risk categories are supported by the local "
-            f"RedTeam SDK: {', '.join(requested) or '(none)'}. Supported: "
-            f"{', '.join(mapping.keys())}. Agentic-risk categories "
-            "(ProhibitedActions, SensitiveDataLeakage, TaskAdherence) require a "
-            "cloud/agentic scan, not this local runner. Adjust the manifest scope."
+            "No supported risk categories were requested. Supported: "
+            f"{', '.join(mapping.keys())}."
         )
     return cats
 
@@ -176,15 +180,43 @@ def build_attack_strategies(names: List[str]) -> List[Any]:
     return strategies
 
 
-def make_target_callback():
+def _looks_like_policy_refusal(err: Exception) -> bool:
+    """Heuristic: does this exception look like Copilot Studio content-management
+    / threat-detection refusing the probe (an expected 'defended' outcome), as
+    opposed to an infrastructure failure (auth, network, throttling, outage)?"""
+    msg = str(err).lower()
+    policy_signals = (
+        "content", "moderation", "responsible ai", "policy", "blocked", "filtered",
+        "safety", "harm", "jailbreak", "prompt shield", "flagged",
+    )
+    infra_signals = (
+        "timeout", "timed out", "connection", "unauthorized", "forbidden",
+        "authentication", "token", "429", "throttl", "rate limit", "500",
+        "502", "503", "504", "unavailable", "network", "dns", "ssl",
+    )
+    if any(s in msg for s in infra_signals):
+        return False
+    return any(s in msg for s in policy_signals)
+
+
+def make_target_callback(scan_state: Dict[str, Any]):
     """Return an async callback that forwards a probe to the Copilot Studio
     agent and returns its reply in OpenAI chat-protocol shape.
 
     The Copilot Studio client (and its MSAL token) is created **once per scan**
-    and reused across every probe. Only a fresh single-turn conversation is
-    started per probe, which keeps probes isolated while avoiding repeated auth,
-    token-cache reads, and client setup that would slow large scans and increase
-    throttling/failure rates.
+    and reused across every probe. This keeps auth/token-cache work out of the
+    per-probe hot path.
+
+    Multi-turn strategies (Multiturn/Crescendo) supply a full turn sequence; the
+    callback replays every user turn in order on a single conversation so those
+    strategies actually exercise conversation history instead of only the last
+    message.
+
+    Exceptions are classified: content-policy refusals are returned as a benign
+    'defended' response (the expected outcome), while infrastructure failures
+    (auth/network/throttling/outage) are counted in ``scan_state`` so the report
+    can be flagged incomplete (REVIEW REQUIRED) instead of being scored as safe
+    refusals that deflate ASR.
     """
     from copilot_studio_client import McsCopilotClient, McsConnectionSettings, ActivityTypes
 
@@ -203,17 +235,32 @@ def make_target_callback():
         session_state: Optional[str] = None,  # noqa: ARG001
         context: Optional[Dict[str, Any]] = None,  # noqa: ARG001
     ) -> Dict[str, List[Dict[str, str]]]:
-        messages_list = [{"role": m.role, "content": m.content} for m in messages]
-        latest = messages_list[-1]["content"]
+        # Preserve the full turn sequence for multi-turn strategies; replay each
+        # user message in order on one conversation.
+        user_turns = [m.content for m in messages if getattr(m, "role", "user") == "user"]
+        if not user_turns:
+            user_turns = [messages[-1].content]
         try:
-            # Fresh single-turn conversation per probe; the client/token is reused.
             await client.start_conversation_async()
-            activities = await client.ask_question_async(latest)
-            text = "".join(a.text for a in activities if getattr(a, "type", None) == ActivityTypes.message)
+            text = ""
+            for turn in user_turns:
+                activities = await client.ask_question_async(turn)
+                text = "".join(
+                    a.text for a in activities if getattr(a, "type", None) == ActivityTypes.message
+                )
             formatted = {"content": text, "role": "assistant"}
-        except Exception as e:  # Copilot Studio content/threat policies raise here — expected.
-            print(f"[probe refused/error] {e!s}")
-            formatted = {"content": f"[target refused or errored]: {e!s}", "role": "assistant"}
+        except Exception as e:  # noqa: BLE001
+            if _looks_like_policy_refusal(e):
+                # Expected: the target's safety layer refused. Score as defended.
+                print(f"[probe refused by policy] {e!s}")
+                formatted = {"content": "[target refused the request]", "role": "assistant"}
+            else:
+                # Infrastructure failure — do NOT let this be scored as a safe
+                # refusal. Record it so the scan can be flagged incomplete.
+                scan_state["infra_errors"] = scan_state.get("infra_errors", 0) + 1
+                print(f"[probe INFRA ERROR - not a valid result] {e!s}")
+                formatted = {"content": "[probe failed: infrastructure error, not a valid result]",
+                             "role": "assistant"}
         return {"messages": [formatted]}
 
     return copilot_studio_agent_callback
@@ -262,14 +309,28 @@ async def run_scan(scan_id: Optional[str]) -> None:
     scan_json = out_dir / f"{scan_name}.json"
 
     print(f"\nRunning red-team scan '{scan_name}' ...")
+    scan_state: Dict[str, Any] = {"infra_errors": 0}
     await red_team.scan(
-        target=make_target_callback(),
+        target=make_target_callback(scan_state),
         scan_name=scan_name,
         application_scenario="Copilot Studio agent red-team",
         attack_strategies=build_attack_strategies(scope["attackStrategies"]),
         output_path=str(scan_json),
     )
-    _finish(scan_json, out_dir, scan_name, manifest)
+
+    # Redact secrets/PII in the raw scan JSON on disk — the SDK writes full target
+    # responses there, and report-time redaction alone would leave the raw
+    # artifact unprotected.
+    redact_scan_file(scan_json)
+
+    if scan_state.get("infra_errors"):
+        print(
+            f"\n[WARNING] {scan_state['infra_errors']} probe(s) failed with "
+            "infrastructure errors (auth/network/throttling/outage). These are "
+            "NOT valid results — treat this scan as INCOMPLETE / REVIEW REQUIRED "
+            "and re-run before trusting the verdict."
+        )
+    _finish(scan_json, out_dir, scan_name, manifest, incomplete=bool(scan_state.get("infra_errors")))
 
 
 # --------------------------------------------------------------------------- #
@@ -358,7 +419,8 @@ def dry_run(scan_id: Optional[str]) -> None:
     _finish(scan_json, out_dir, scan_name, manifest, simulated=True)
 
 
-def _finish(scan_json: Path, out_dir: Path, scan_name: str, manifest: Dict[str, Any], simulated: bool = False) -> None:
+def _finish(scan_json: Path, out_dir: Path, scan_name: str, manifest: Dict[str, Any],
+            simulated: bool = False, incomplete: bool = False) -> None:
     meta = {
         "target_name": os.environ.get("AGENT_IDENTIFIER", "SIMULATED-TARGET" if simulated else "Copilot Studio agent"),
         "environment": os.environ.get("TARGET_ENVIRONMENT", "Simulation" if simulated else "Unspecified"),
@@ -373,6 +435,9 @@ def _finish(scan_json: Path, out_dir: Path, scan_name: str, manifest: Dict[str, 
     print(f"  Scan JSON: {scan_json}")
     if simulated:
         print("\nNOTE: results are SIMULATED (stub target). Use a real scan for a valid verdict.")
+    if incomplete:
+        print("\nNOTE: the scan is INCOMPLETE due to infrastructure errors on one or "
+              "more probes. Treat the verdict as REVIEW REQUIRED and re-run.")
 
 
 def main() -> None:
