@@ -8,9 +8,8 @@ disclosure without ever having exposed real data. This generates the canaries,
 the placement plan, and an empty findings register to fill in as you test.
 
 Usage:
-    python3 canaries.py --agent "HR Assistant" --out ./redteam-run
-    python3 canaries.py --agent "HR Assistant" --count 3 --out ./redteam-run
-
+    python3 scripts/canaries.py --agent "HR Assistant" --out ./redteam-run
+    python3 scripts/canaries.py --agent "HR Assistant" --count 3 --out ./redteam-run
 Produces, in the output directory:
     canaries.csv            id, token, intended placement, who should NOT see it
     findings.csv            the register to fill in as you test
