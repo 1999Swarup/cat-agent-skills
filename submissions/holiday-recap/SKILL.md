@@ -461,7 +461,7 @@ read differently on purpose:
 
 | | Outlook items | Teams items |
 |---|---|---|
-| Opening line | The subject, bolded and linked, on its own line | The team▸channel, chat name, or person's name, bolded and linked, on its own line |
+| Opening line | The subject, bolded and linked, on its own line | The team▸channel, chat name, or person's name, bolded and linked, on its own line — the title itself carries the link, exactly as for Outlook items; never a plain title followed by a separate "Open thread" link |
 | Metadata | A short bullet list under the title — **From**, **Received/When** — never crammed onto one line with the title | No "From" bullet — a thread has many authors, so the summary itself carries who said what |
 | Body | A one-line quoted summary, then a separate **Why important** line | A short paragraph summarising the period, written the way a Teams recap reads |
 | Meetings specifically | Date and time lead, calendar-invite style | — |
@@ -509,9 +509,7 @@ actually create it in Outlook.)*
 **Teams-style item — spaced out:**
 
 ```
-💬 **Team ▸ #channel**
-
-**[Open thread](deep-link)**
+💬 **[Team ▸ #channel](deep-link)**
 
 Summary of the thread for this period, written as a short paragraph — decisions,
 asks, and anything still open. No "From" bullet; the paragraph carries the authors.
@@ -699,8 +697,10 @@ drafts**, and **Teams**, each group blank-line-separated, exactly as Step 7 spec
   list; a horizontal rule always separates items; a blank line always separates fields. This is
   a hard formatting rule, not a stylistic suggestion — a dense, unbroken block of text anywhere
   in the recap is a defect to fix before sending the response.
-- Always emit every section in the fixed order above, even when empty — write **"No relevant
-  items found"** rather than omitting the heading.
+- **Within the areas selected in Q0**, always emit every section in the fixed order above, even
+  when it has no items — write **"No relevant items found"** rather than omitting the heading.
+  This never overrides the Q0 rule: a section whose area was NOT selected is omitted entirely,
+  heading and all, and is not written out as empty.
 - If a source could not be searched, keep its heading and state the gap plainly.
 
 ## Step 7 — Act on the recap (review, approve, execute)
