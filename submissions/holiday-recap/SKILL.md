@@ -117,7 +117,7 @@ values with semicolons."* Free text, optional — blank means no override.
 **Q4 — Teams to include** *(ask only if Teams Channels, or "Include everything", was selected in
 Q0 — skip entirely if Teams Channels was not chosen, even when other Teams areas like Group
 Chats or 1:1 Chats were, since only channels are scoped by team)*
-Call `ListTeams` and present a **ranked shortlist of high-priority teams** (posted in / mentioned
+Call `m365_teams-ListTeams` and present a **ranked shortlist of high-priority teams** (posted in / mentioned
 in recently, then name-matched to the user's accounts, projects or org) as selectable options,
 **plus a free-text field to add other team names, semicolon-separated**, for anything not on the
 shortlist. When asked, this question is mandatory — see the Teams channel scope rule in Step 2.
@@ -126,7 +126,7 @@ Also offer "Scan all teams" and "Skip Teams channels" as explicit options alongs
 **Q5 — Channels to include, per team** *(ask only when Q4 was asked and answered with at least
 one team — skip entirely under the same condition as Q4, and skip per-team as described below)*
 For **each** team selected in Q4 (skip entirely if Q4 was "Skip Teams channels"), call
-`ListChannels` and present a **ranked shortlist of high-priority channels for that team**
+`m365_teams-ListChannels` and present a **ranked shortlist of high-priority channels for that team**
 (channels the user has posted or been mentioned in, then name-matched to their accounts and
 projects), grouped under the team's name, **plus a free-text field per team to add other
 channel names, semicolon-separated**. Skip this question for a team if the user chose "Scan all
@@ -171,17 +171,17 @@ parallel and track progress with `core-TaskCreate` / `core-TaskUpdate`.
 | Calendar & invitations | `outlook_calendar-ListCalendarView` (absence window **and** forward window) |
 | Meetings held while away | `outlook_calendar-ListCalendarView` → `graph-ListMeetingTranscripts` → `graph-GetMeetingTranscript` (per-meeting `joinUrl` path) |
 | Meeting chat / shared content | `m365_teams-ListChatMessages`, `sharepoint_onedrive-SearchDrive` |
-| Teams channels | `m365_teams-ListTeams`, `ListChannels`, `ListChannelMessages` |
-| Teams group chats | `m365_teams-ListChats` (`chatType: group`), `ListChatMessages` |
-| One-to-one chats | `m365_teams-ListChats` (`chatType: oneOnOne`), `ListChatMessages` |
-| Meeting chats | `m365_teams-ListChats` (`chatType: meeting`), `ListChatMessages` |
+| Teams channels | `m365_teams-ListTeams`, `m365_teams-ListChannels`, `m365_teams-ListChannelMessages` |
+| Teams group chats | `m365_teams-ListChats` (`chatType: group`), `m365_teams-ListChatMessages` |
+| One-to-one chats | `m365_teams-ListChats` (`chatType: oneOnOne`), `m365_teams-ListChatMessages` |
+| Meeting chats | `m365_teams-ListChats` (`chatType: meeting`), `m365_teams-ListChatMessages` |
 | @mentions in mail | `m365_search-SearchM365` (`sources: message`, query scoped to the user's own name/mention markup) or scan message bodies for a mention tag matching the user |
-| @mentions in chat/channel | each message's `mentions[]` array from `ListChatMessages` / `ListChannelMessages`, matched against the user's identity |
+| @mentions in chat/channel | each message's `mentions[]` array from `m365_teams-ListChatMessages` / `m365_teams-ListChannelMessages`, matched against the user's identity |
 | Work-pattern signal (Step 4) | `outlook-ListMessages` (Sent Items), `me_profile-GetManagerDetails`, `me_profile-GetDirectReportsDetails`, `outlook_calendar-ListEvents` (prior 60 days, `responseStatus`) |
 
 **Only search the sources for areas selected in Q0.** Skip an entire row of the table above (and
 the tool calls it implies) when its area was not selected — e.g. if Teams Group Chats was not
-chosen, never call `ListChats` with `chatType: group` at all, rather than calling it and
+chosen, never call `m365_teams-ListChats` with `chatType: group` at all, rather than calling it and
 discarding the results. Calendar & invitations is searched whenever Meeting Requests, Important
 Meetings Recap, or Meeting Chats was selected (each draws on the calendar window); email is
 searched whenever Mails was selected.
@@ -222,7 +222,7 @@ at people who were absent, which includes the user. In all three, **exclude any 
 has muted** — a mute is
 an explicit signal that the user does not want to be notified, so treat muted chats as tier 4
 and count them rather than listing them. Read the mute state from the chat's
-`viewpoint.isMuted` (or equivalent `isMuted` field) returned by `ListChats`; if the field is
+`viewpoint.isMuted` (or equivalent `isMuted` field) returned by `m365_teams-ListChats`; if the field is
 absent, treat the chat as unmuted and include it rather than silently dropping it.
 
 Paginate (`next_link`) until the confirmed window is fully covered. A single page is a sample,
@@ -377,8 +377,11 @@ never expanded into a list.
 
 ### Step 6 — Links and traceability
 
-**Every single item in the recap is a link, and that link opens the item itself.** No item is
-ever plain text. This applies to every bucket, in every section.
+**Default: every item in the recap is a link, and that link opens the item itself.** This applies
+to every bucket, in every section — an item is only ever left as plain text through the single
+explicit fallback below, after every recovery route has genuinely been exhausted. "The tool
+didn't return a link" is not a reason to skip the link; it is the trigger for the recovery
+ladder in the Rules below.
 
 **The link must deep-link to the item, not to its container.** A link to an inbox, a channel
 home, a chat list or a calendar view is NOT acceptable — the user must land on the exact
@@ -390,16 +393,16 @@ message, invitation, post or meeting.
 | Draft reply | the draft's own `webLink` from `outlook-CreateReplyDraft` — opens the draft, ready to review and send |
 | Meeting request / calendar event | the event's `webLink` from `ListCalendarView` / `ListEvents` |
 | Meeting join | the event's `onlineMeeting.joinUrl` |
-| Teams channel post | the message's `webUrl` from `ListChannelMessages` — includes the message id, so it opens the post in place. **`ListChannelMessages` frequently omits `webUrl`; when it does, do NOT fall back to plain text — recover the link (see the Teams link-recovery rule below) so every channel item still carries one** |
-| Group / 1:1 / meeting chat message | the message's `webUrl` from `ListChatMessages`. **Chat messages very often return `webUrl: null`; when they do, recover the link (see the Teams link-recovery rule below) rather than dropping to plain text**, and still name the author and timestamp alongside it |
+| Teams channel post | the message's `webUrl` from `m365_teams-ListChannelMessages` — includes the message id, so it opens the post in place. **`m365_teams-ListChannelMessages` frequently omits `webUrl`; when it does, do NOT fall back to plain text — recover the link (see the Teams link-recovery rule below) so every channel item still carries one** |
+| Group / 1:1 / meeting chat message | the message's `webUrl` from `m365_teams-ListChatMessages`. **Chat messages very often return `webUrl: null`; when they do, recover the link (see the Teams link-recovery rule below) rather than dropping to plain text**, and still name the author and timestamp alongside it |
 | File, deck or recap | the attachment's or drive item's `contentUrl` / `webUrl` |
 
 **Rules**
 - **Make the item's own title the link.** Write `**[Subject](url)**`, not a title followed by a
   bare "[link]" — the user should click the thing they are reading.
 - **Take the URL verbatim from tool output.** Never construct, guess, shorten or "correct" one.
-- **Teams link recovery — every Teams item gets a working link.** `ListChannelMessages` and
-  `ListChatMessages` routinely return no `webUrl`, and a Teams section rendered without links is a
+- **Teams link recovery — every Teams item gets a working link.** `m365_teams-ListChannelMessages`
+  and `m365_teams-ListChatMessages` routinely return no `webUrl`, and a Teams section rendered without links is a
   defect, not an acceptable outcome. Before writing a Teams item as plain text, work down this
   ladder and stop at the first step that yields a link:
   1. **Re-request the field.** Call `graph-QueryGraph` for that exact message with
@@ -421,9 +424,14 @@ message, invitation, post or meeting.
   plainly** rather than presenting it as working — name the item and note the link did not
   resolve, so the user knows to locate it manually instead of assuming the click will land
   correctly.
-- **If no deep link exists, say `Source link unavailable`** and give enough identifying detail
-  (sender/author, exact timestamp, subject or chat name) for the user to find it themselves.
-  Never substitute a container link and never fabricate one.
+- **The single fallback — `Source link unavailable`.** This is the ONE case in which an item's
+  title is not a link, and it applies only after the routes above have actually been tried and
+  failed: the tool returned no link, a re-request returned none, no parent item carries one, and
+  (for a Teams message) the deep link could not be assembled from ids the tools returned. When it
+  applies, say `Source link unavailable` and give enough identifying detail (sender/author, exact
+  timestamp, subject or chat name) for the user to find it themselves. Never substitute a
+  container link and never fabricate one — an honest `Source link unavailable` is correct here,
+  and is not a violation of the every-item-is-a-link default above.
 
 ### Step 6b — Render Outlook items like Outlook, Teams items like Teams, and make it easy to read
 
@@ -444,6 +452,7 @@ source; always carry its icon.
 | Meeting Request | 📅 | A future invitation awaiting a response |
 | Important Meetings Recap | 🎥 | A meeting held during the absence |
 | Teams channel / group / 1:1 chat | 💬 | A Teams conversation |
+| Important chat subsection heading | 🟣 | The "Important … chat" heading inside the Chats section |
 | Suggested reply, not yet created | 📝 | Text ready — picking it in Step 7 creates the real draft |
 | Section heading (Mails, Chats) | 📧 / 💬 | Top-level source divider |
 
@@ -689,7 +698,7 @@ drafts**, and **Teams**, each group blank-line-separated, exactly as Step 7 spec
   list; a horizontal rule always separates items; a blank line always separates fields. This is
   a hard formatting rule, not a stylistic suggestion — a dense, unbroken block of text anywhere
   in the recap is a defect to fix before sending the response.
-- Always emit every **selected** section in the fixed order above, even when empty — write **"No relevant
+- Always emit every section in the fixed order above, even when empty — write **"No relevant
   items found"** rather than omitting the heading.
 - If a source could not be searched, keep its heading and state the gap plainly.
 
@@ -752,7 +761,7 @@ Once the user selects specific items — and only those items — carry them out
 | Create the draft for a suggested reply (Step 2b text, not yet a real draft) | `outlook-CreateReplyDraft` / `CreateReplyAllDraft` with the suggested content — this is the first time anything is written to the mailbox for that item. Hand the user the draft's own web link once created |
 | Send an already-created draft | `outlook-SendDraftMessage` on that draft's id — only after the user has separately approved sending it, distinct from approving its creation |
 | Send a new email with no suggested reply on file | `outlook-SendEmailWithAttachments` |
-| Post to a chat or channel | `m365_teams-PostMessage` / `PostChannelMessage` / `ReplyToChannelMessage` |
+| Post to a chat or channel | `m365_teams-PostMessage` / `m365_teams-PostChannelMessage` / `m365_teams-ReplyToChannelMessage` |
 
 Rules for execution:
 - **Creating and sending are two separate approvals.** Selecting a suggested reply in this list
