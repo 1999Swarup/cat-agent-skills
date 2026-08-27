@@ -689,7 +689,7 @@ drafts**, and **Teams**, each group blank-line-separated, exactly as Step 7 spec
   list; a horizontal rule always separates items; a blank line always separates fields. This is
   a hard formatting rule, not a stylistic suggestion — a dense, unbroken block of text anywhere
   in the recap is a defect to fix before sending the response.
-- Always emit every section in the fixed order above, even when empty — write **"No relevant
+- Always emit every **selected** section in the fixed order above, even when empty — write **"No relevant
   items found"** rather than omitting the heading.
 - If a source could not be searched, keep its heading and state the gap plainly.
 
