@@ -241,7 +241,7 @@ in Step 7.
   before anything is created.
 - **The draft is created only when the user selects that item's action in Step 7** (by number or
   by naming it) — at that point, and only then, call `outlook-CreateReplyDraft` (or
-  `CreateReplyAllDraft` when the reply is owed to the group already on the thread) with the
+  `outlook-CreateReplyAllDraft` when the reply is owed to the group already on the thread) with the
   suggested content, then hand the user the real draft's web link to open, edit, and send
   themselves. Creating the draft is still not the same as sending it — `outlook-SendDraftMessage`
   remains a separate, explicit approval.
@@ -300,12 +300,12 @@ reuse it across all seven sources.
    priority signal — weight higher than a one-off exchange.
 2. **Reporting line and regular 1:1s.** `me_profile-GetManagerDetails` and
    `me_profile-GetDirectReportsDetails` identify the user's manager and reports; recurring 1:1s
-   and skip-levels found in the pre-absence calendar (`ListEvents`, filtered to recurring
+   and skip-levels found in the pre-absence calendar (`outlook_calendar-ListEvents`, filtered to recurring
    meetings with 1–2 attendees) add named counterparts to this list. A message from any of them
    is weighted higher by default, on top of anything named in Q2.
 3. **Meetings the user actually keeps vs. lets lapse.** Compare accepted/attended meetings
    against declined or habitually-ignored recurring invites over the prior 60 days
-   (`ListEvents` `responseStatus`). Projects, teams, or recurring series the user consistently
+   (`outlook_calendar-ListEvents` `responseStatus`). Projects, teams, or recurring series the user consistently
    shows up for indicate real priority; series they routinely decline or leave unanswered do
    not — even if the series continues during the absence.
 4. **Named accounts, projects and teams.** Customer, account or project names that recur across
@@ -389,9 +389,9 @@ message, invitation, post or meeting.
 
 | Item | Deep link to use |
 |---|---|
-| Email | the message's `webLink` from `outlook-ListMessages` / `GetMessage` — opens that message in Outlook |
+| Email | the message's `webLink` from `outlook-ListMessages` / `outlook-GetMessage` — opens that message in Outlook |
 | Draft reply | the draft's own `webLink` from `outlook-CreateReplyDraft` — opens the draft, ready to review and send |
-| Meeting request / calendar event | the event's `webLink` from `ListCalendarView` / `ListEvents` |
+| Meeting request / calendar event | the event's `webLink` from `outlook_calendar-ListCalendarView` / `outlook_calendar-ListEvents` |
 | Meeting join | the event's `onlineMeeting.joinUrl` |
 | Teams channel post | the message's `webUrl` from `m365_teams-ListChannelMessages` — includes the message id, so it opens the post in place. **`m365_teams-ListChannelMessages` frequently omits `webUrl`; when it does, do NOT fall back to plain text — recover the link (see the Teams link-recovery rule below) so every channel item still carries one** |
 | Group / 1:1 / meeting chat message | the message's `webUrl` from `m365_teams-ListChatMessages`. **Chat messages very often return `webUrl: null`; when they do, recover the link (see the Teams link-recovery rule below) rather than dropping to plain text**, and still name the author and timestamp alongside it |
@@ -410,7 +410,7 @@ message, invitation, post or meeting.
      `/teams/{team-id}/channels/{channel-id}/messages/{message-id}` for a channel post,
      `/chats/{chat-id}/messages/{message-id}` for a chat message. Use the returned `webUrl` verbatim.
   2. **Use the parent's link.** For a meeting chat, link the parent event's `webLink` (or its
-     `onlineMeeting.joinUrl`) from `ListCalendarView` and label it as the meeting the chat belongs to.
+     `onlineMeeting.joinUrl`) from `outlook_calendar-ListCalendarView` and label it as the meeting the chat belongs to.
   3. **Build the standard Teams deep link — the ONE permitted exception to "never construct a URL",
      and only for Teams messages.** Assemble it from ids the tools returned, never from guesses:
      - Channel post: `https://teams.microsoft.com/l/message/{channel-id}/{message-id}?groupId={team-id}&tenantId={tenant-id}`
@@ -525,7 +525,9 @@ above, applied identically every single time.
 
 ## Output Structure
 
-```markdown
+The recap is emitted as Markdown in the shape below. Sub-blocks shown in fences are literal
+templates to follow.
+
 # Holiday Recap
 
 - **Areas covered:** <Q0 selection, e.g. "Mails, Meeting Requests, Teams Channels" — or
@@ -681,7 +683,6 @@ better for the user.
 
 The numbered action list from Step 7 — one action per line, grouped under **Meetings**, **Mail
 drafts**, and **Teams**, each group blank-line-separated, exactly as Step 7 specifies.
-```
 
 **Rules**
 - **Every section is a list of items — nothing else.** No preamble, no narrative bridge, no
@@ -755,10 +756,10 @@ Once the user selects specific items — and only those items — carry them out
 
 | Action | Tool |
 |---|---|
-| Accept / Tentative / Decline an invitation | `outlook_calendar-AcceptEvent` / `TentativelyAcceptEvent` / `DeclineEvent` |
-| Propose a new time | `outlook_calendar-FindMeetingTimes` to find a concrete free slot, then `DeclineEvent` with the proposed time, or `UpdateEvent` where the user organises the meeting. Show the proposed slot before acting |
+| Accept / Tentative / Decline an invitation | `outlook_calendar-AcceptEvent` / `outlook_calendar-TentativelyAcceptEvent` / `outlook_calendar-DeclineEvent` |
+| Propose a new time | `outlook_calendar-FindMeetingTimes` to find a concrete free slot, then `outlook_calendar-DeclineEvent` with the proposed time, or `outlook_calendar-UpdateEvent` where the user organises the meeting. Show the proposed slot before acting |
 | Follow | No tool call. Take no calendar action; confirm back that the item is noted and the organiser was not contacted |
-| Create the draft for a suggested reply (Step 2b text, not yet a real draft) | `outlook-CreateReplyDraft` / `CreateReplyAllDraft` with the suggested content — this is the first time anything is written to the mailbox for that item. Hand the user the draft's own web link once created |
+| Create the draft for a suggested reply (Step 2b text, not yet a real draft) | `outlook-CreateReplyDraft` / `outlook-CreateReplyAllDraft` with the suggested content — this is the first time anything is written to the mailbox for that item. Hand the user the draft's own web link once created |
 | Send an already-created draft | `outlook-SendDraftMessage` on that draft's id — only after the user has separately approved sending it, distinct from approving its creation |
 | Send a new email with no suggested reply on file | `outlook-SendEmailWithAttachments` |
 | Post to a chat or channel | `m365_teams-PostMessage` / `m365_teams-PostChannelMessage` / `m365_teams-ReplyToChannelMessage` |
@@ -778,7 +779,7 @@ Rules for execution:
   when the answer is owed to a group already on the thread, and say which you are using.
 - **Draft-only override.** If the user has said "draft only", "don't send", "let me review
   first", or similar, that instruction is authoritative and stays in force for the rest of the
-  task: leave every mail as a draft (never call `SendDraftMessage`), present Teams text in chat
+  task: leave every mail as a draft (never call `outlook-SendDraftMessage`), present Teams text in chat
   instead of posting, and take no calendar action beyond Follow.
 
 ## Guardrails
