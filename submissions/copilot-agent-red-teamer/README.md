@@ -54,9 +54,9 @@ score ASR, and return the fixed report with a verdict.
 
 Scope is controlled by `assets/redteam-manifest.json` (risk categories, attack
 strategies/complexity groups, objectives per category, language, ASR threshold,
-and ready-made scan presets: quick smoke, pre-deployment full, jailbreak /
-injection, and agentic-risk). The manifest is optional — with none, the skill
-runs a safe default (four core content risks, baseline + easy, 5 objectives).
+and ready-made scan presets: quick smoke, pre-deployment full, and jailbreak /
+injection). The manifest is optional — with none, the skill runs a safe default
+(four core content risks, baseline + easy, 5 objectives).
 
 ## The report
 

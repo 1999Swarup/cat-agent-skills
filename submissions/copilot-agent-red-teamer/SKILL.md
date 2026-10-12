@@ -198,8 +198,8 @@ Configure `assets/redteam-manifest.json` to control scope. Fields:
 - `attackStrategies` — explicit strategies and/or complexity groups
   (`BASELINE`, `EASY`, `MODERATE`, `DIFFICULT`).
 - `numObjectives` — seed objectives per risk category.
-- `language` — simulation language (English default; also Spanish, Italian,
-  French, Japanese, Portuguese, Chinese).
+- `language` — simulation language (English default; examples include Spanish,
+  Italian, French, Japanese, Portuguese, and SimplifiedChinese).
 - `target` — how to reach the system under test.
 - `customAttackObjectivesPath` — optional path to your own seed-prompt dataset.
 - `scoring.threshold` — ASR above which the target fails the gate.

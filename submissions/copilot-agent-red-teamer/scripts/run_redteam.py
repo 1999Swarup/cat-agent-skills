@@ -62,7 +62,7 @@ _STRATEGY_ALIASES = {"IndirectAttack": "IndirectJailbreak", "Multiturn": "MultiT
 _GROUP_EXPANSIONS = {
     "EASY": ["Base64", "Flip", "Morse"],
     "MODERATE": ["Tense"],
-    "DIFFICULT": ["MultiTurn", "Crescendo"],
+    "DIFFICULT": ["Compose:Tense+Base64"],
 }
 DEFAULT_OUTPUT_ROOT = Path.home() / ".copilot-agent-red-teamer" / "output"
 
@@ -449,7 +449,7 @@ async def run_scan(scan_id: Optional[str], assume_yes: bool = False) -> None:
             "NOT valid results — treat this scan as INCOMPLETE / REVIEW REQUIRED "
             "and re-run before trusting the verdict."
         )
-    _finish(scan_json, out_dir, scan_name, manifest, incomplete=bool(scan_state.get("infra_errors")))
+    _finish(scan_json, out_dir, scan_name, manifest, scope=scope, incomplete=bool(scan_state.get("infra_errors")))
 
 
 # --------------------------------------------------------------------------- #
@@ -534,11 +534,13 @@ def dry_run(scan_id: Optional[str]) -> None:
     out_dir = scan_json.parent
     scan_json.write_text(json.dumps(simulate_scan(scope), indent=2), encoding="utf-8")
     print(f"\nSimulated scan JSON written: {scan_json}")
-    _finish(scan_json, out_dir, scan_name, manifest, simulated=True)
+    _finish(scan_json, out_dir, scan_name, manifest, scope=scope, simulated=True)
 
 
 def _finish(scan_json: Path, out_dir: Path, scan_name: str, manifest: Dict[str, Any],
+            scope: Optional[Dict[str, Any]] = None,
             simulated: bool = False, incomplete: bool = False) -> None:
+    scope = scope or {}
     meta = {
         "target_name": os.environ.get("AGENT_IDENTIFIER", "SIMULATED-TARGET" if simulated else "Copilot Studio agent"),
         "environment": os.environ.get("TARGET_ENVIRONMENT", "Simulation" if simulated else "Unspecified"),
@@ -546,6 +548,10 @@ def _finish(scan_json: Path, out_dir: Path, scan_name: str, manifest: Dict[str, 
         "failOnAnyAgenticRisk": manifest.get("scoring", {}).get("failOnAnyAgenticRisk", True),
         "scan_name": scan_name,
         "incomplete": incomplete,
+        "riskCategories": scope.get("riskCategories", []),
+        "attackStrategies": scope.get("attackStrategies", []),
+        "numObjectives": scope.get("numObjectives", "N/A"),
+        "language": scope.get("language", "English"),
     }
     html_path, md_path = build_report(scan_json, out_dir, meta)
     print("\nReport generated:")

@@ -74,6 +74,53 @@ def _asr_value(value: Optional[float]) -> Optional[float]:
         return None
 
 
+def _as_list(value: Any) -> List[str]:
+    if value is None:
+        return []
+    if isinstance(value, dict):
+        return [str(k) for k in value.keys()]
+    if isinstance(value, (list, tuple, set)):
+        return [str(v) for v in value if v is not None]
+    return [str(value)]
+
+
+def _normalized_params(params: Dict[str, Any], meta: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize Azure SDK parameter shapes across releases.
+
+    Current scorecards may nest generated risk categories under
+    ``attack_objective_generated_from`` and expose strategy information through
+    ``attack_complexity`` / ``techniques_used`` rather than flat names. The
+    runner also passes manifest scope metadata in ``meta`` so fields omitted by
+    the SDK still render in the fixed report.
+    """
+    risk_categories = (
+        _as_list(params.get("risk_categories"))
+        or _as_list(params.get("risk_category"))
+        or _as_list(params.get("attack_objective_generated_from"))
+        or _as_list(meta.get("riskCategories"))
+    )
+    attack_strategies = (
+        _as_list(params.get("attack_strategies"))
+        or _as_list(params.get("techniques_used"))
+        or _as_list(params.get("attack_complexity"))
+        or _as_list(meta.get("attackStrategies"))
+    )
+    num_objectives = (
+        params.get("num_objectives")
+        or params.get("numObjectives")
+        or meta.get("numObjectives")
+        or "N/A"
+    )
+    language = params.get("language") or meta.get("language") or "English"
+    return {
+        **params,
+        "risk_categories": risk_categories,
+        "attack_strategies": attack_strategies,
+        "num_objectives": num_objectives,
+        "language": language,
+    }
+
+
 def parse_scan(scan: Dict[str, Any]) -> Dict[str, Any]:
     scorecard = _first(scan, "redteaming_scorecard", "scorecard") or {}
     params = _first(scan, "redteaming_parameters", "parameters") or {}
@@ -314,7 +361,7 @@ def render_markdown(data: Dict[str, Any], meta: Dict[str, Any]) -> str:
     threshold_pct = _resolve_threshold_pct(meta)
     verdict, _ = _final_verdict(data, meta, threshold_pct)
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    params = data["params"]
+    params = _normalized_params(data["params"], meta)
 
     lines: List[str] = []
     lines.append(f"# {REPORT_TITLE}\n")
@@ -424,7 +471,7 @@ def render_html(data: Dict[str, Any], meta: Dict[str, Any]) -> str:
     threshold_pct = _resolve_threshold_pct(meta)
     verdict, cls = _final_verdict(data, meta, threshold_pct)
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    params = data["params"]
+    params = _normalized_params(data["params"], meta)
 
     def esc(s: Any) -> str:
         return html.escape(str(s))

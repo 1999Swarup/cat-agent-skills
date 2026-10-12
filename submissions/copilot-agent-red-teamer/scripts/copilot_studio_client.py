@@ -27,13 +27,13 @@ import msal
 
 # --- Copilot Studio client (preview) ---------------------------------------
 # Import names follow the microsoft-agents-copilotstudio-client preview package.
-from microsoft.agents.copilotstudio.client import (
+from microsoft_agents.copilotstudio.client import (
     ConnectionSettings,
     CopilotClient,
     PowerPlatformCloud,
     AgentType,
 )
-from microsoft.agents.core.models import ActivityTypes  # noqa: F401  (re-exported for callers)
+from microsoft_agents.core.models import ActivityTypes  # noqa: F401  (re-exported for callers)
 
 _TOKEN_CACHE_PATH = Path(os.path.expanduser("~")) / ".mcs_redteam_token_cache.bin"
 # Power Platform API scope used by the Copilot Studio Direct-to-Engine client.
