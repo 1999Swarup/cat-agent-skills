@@ -57,7 +57,7 @@ framework): scan → evaluate → report.
      `references/RISK-CATEGORIES.md`, or the user's own dataset when
      `customAttackObjectivesPath` is configured.
    - Keep objectives text-only and single-turn unless a multi-turn strategy
-     (`Multiturn`, `Crescendo`) is explicitly enabled.
+     (`MultiTurn`, `Crescendo`) is explicitly enabled.
 4. Always run the **baseline** direct adversarial queries first (no
    transformation). Baseline results are the control group for measuring whether
    an attack strategy adds lift.
@@ -95,38 +95,29 @@ framework): scan → evaluate → report.
 
 This skill targets two runtimes and behaves differently on each:
 
-- **Scout (or any shell/Python environment):** run the bundled `scripts/`
-  directly — they execute a **real** scan with the Azure AI Evaluation SDK
-  `RedTeam` scanner (PyRIT) against the target and generate the fixed HTML/PDF
-  security report. On Scout you have a shell, so install the requirements and
-  run `python scripts/run_redteam.py`. Use `--dry-run` first (no Azure) to
-  validate the pipeline, then a real scan once `.env` + `az login` are set.
+- **Scout (or any shell/Python environment):** the bundled `scripts/` can execute
+  a **real** scan with the Azure AI Evaluation SDK `RedTeam` scanner (PyRIT)
+  against the target and generate the fixed HTML/Markdown security report.
 - **Copilot Studio:** the authoring canvas has **no Python runtime**, so use this
   skill as the *playbook* — plan, scope, and reason about a scan, and act as the
-  red-team specialist in a multi-agent system. To actually probe an agent from
-  Copilot Studio, either (a) run these scripts externally (Scout/CI/an Azure
-  Function the orchestrator calls as a tool), or (b) use the companion **UI-only**
-  skill `copilot-studio-guardrails-coach` for a manual, in-product pass that
-  needs no code. Prefer the companion skill when the user wants everything inside
-  Copilot Studio.
+  red-team specialist in a multi-agent system. To actually probe an agent, run
+  the scripts from Scout or use the companion **UI-only** skill
+  `copilot-studio-guardrails-coach` for a manual, in-product pass that needs no
+  code. Prefer the companion skill when the user wants everything inside Copilot
+  Studio.
 
 ## Running the scan (bundled tooling)
 
 This skill ships a runnable reference implementation in `scripts/` that executes
 the real scan with the Azure AI Evaluation SDK `RedTeam` scanner against a
-published Copilot Studio agent and emits the fixed report. On **Scout** run these
-directly; see [running scans](references/RUNNING-SCANS.md) for full setup. In
-short:
+published Copilot Studio agent and emits the fixed report. On **Scout**, follow
+the setup in the README / `references/RUNNING-SCANS.md`, then run:
 
-1. `pip install -r scripts/requirements.txt` and install the preview Copilot
-   Studio client (see `scripts/copilot_studio_client.py`), then `az login`.
-2. Copy `scripts/.env.example` to `scripts/.env` and fill the Foundry project
-   endpoint plus the Copilot Studio target values.
-3. `python scripts/run_redteam.py --connectivity-check` to confirm the endpoint.
-4. `python scripts/run_redteam.py` (or `--scan <id>` for a named manifest scan).
+1. `python scripts/run_redteam.py --connectivity-check` to confirm the endpoint.
+2. `python scripts/run_redteam.py` (or `--scan <id>` for a named manifest scan).
    The runner reads `assets/redteam-manifest.json`, runs baseline + configured
-   strategies, scores ASR, and writes the fixed HTML/Markdown report next to the
-   raw scan JSON under `scripts/output/<scan>/`.
+   strategies, scores ASR, and writes the fixed HTML/Markdown report under the
+   resolved output directory (default `~/.copilot-agent-red-teamer/output`).
 
 The bundled tooling is optional: an agent that only has this skill's text can
 still plan, reason about, and report a scan using the same rubric. The scripts
@@ -168,9 +159,9 @@ bypass safeguards. Complexity reflects attacker effort:
 
 - **Baseline** — the raw adversarial query with no transformation. Always run.
 - **Easy** — encodings/obfuscations (e.g., `Base64`, `Flip`, `Morse`, `ROT13`,
-  `Binary`, `Leetspeak`, `Caesar`, `Url`, `Jailbreak`/UPIA, `IndirectAttack`/XPIA).
+  `Binary`, `Leetspeak`, `Caesar`, `Url`, `Jailbreak`/UPIA, `IndirectJailbreak`/XPIA).
 - **Moderate** — semantic rewrites such as `Tense` (past-tense reframing).
-- **Difficult** — multi-turn or composed attacks (`Multiturn`, `Crescendo`, or a
+- **Difficult** — multi-turn or composed attacks (`MultiTurn`, `Crescendo`, or a
   composition chaining two strategies, e.g., `Tense` + `Base64`).
 
 The default groups mirror Azure AI Foundry: `EASY` = {Base64, Flip, Morse},

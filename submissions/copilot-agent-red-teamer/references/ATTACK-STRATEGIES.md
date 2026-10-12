@@ -55,9 +55,9 @@ Use these group names directly in `attackStrategies`:
 | `UnicodeSubstitution` | Substitutes Unicode characters. | Easy |
 | `Url` | URL encoding. | Easy |
 | `Jailbreak` | User-injected prompt attack (UPIA): crafted prompts that try to override safeguards. | Easy |
-| `IndirectAttack` | Indirect/cross-prompt injection (XPIA): payload hidden in context, retrieved content, or tool output. | Easy |
+| `IndirectJailbreak` | Indirect/cross-prompt injection (XPIA): payload hidden in context, retrieved content, or tool output. | Easy |
 | `Tense` | Rewrites the request into past tense to dodge intent filters. | Moderate |
-| `Multiturn` | Escalates across several conversation turns. | Difficult |
+| `MultiTurn` | Escalates across several conversation turns. | Difficult |
 | `Crescendo` | Gradually increases prompt risk/complexity turn over turn. | Difficult |
 
 ## Compositions
@@ -75,10 +75,10 @@ Compositions support chaining only two strategies.
 
 - **Fast gate:** `BASELINE` only.
 - **Standard pre-ship:** `BASELINE`, `EASY`, `MODERATE`.
-- **Deep assurance:** add `DIFFICULT`, `Jailbreak`, `IndirectAttack`, and one or
+- **Deep assurance:** add `DIFFICULT`, `Jailbreak`, `IndirectJailbreak`, and one or
   two compositions.
-- **Agentic targets:** always include `Jailbreak` and `IndirectAttack`, and use
-  `Multiturn` / `Crescendo` to test tool-abuse and data-leak resilience.
+- **Agentic targets:** always include `Jailbreak` and `IndirectJailbreak`, and use
+  `MultiTurn` / `Crescendo` to test tool-abuse and data-leak resilience.
 
 ## Execution notes
 

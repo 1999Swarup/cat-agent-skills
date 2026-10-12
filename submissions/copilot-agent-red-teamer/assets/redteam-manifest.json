@@ -15,7 +15,7 @@
     "language": "English"
   },
   "scoring": {
-    "threshold": 0.05,
+    "threshold": 5.0,
     "failOnAnyAgenticRisk": true
   },
   "maxProbesBeforeConfirm": 200,
@@ -91,7 +91,7 @@
       "attackStrategies": [
         "BASELINE",
         "Jailbreak",
-        "IndirectAttack",
+        "IndirectJailbreak",
         "Tense",
         "Compose:Tense+Base64"
       ],
@@ -115,8 +115,8 @@
       "attackStrategies": [
         "BASELINE",
         "Jailbreak",
-        "IndirectAttack",
-        "Multiturn"
+        "IndirectJailbreak",
+        "MultiTurn"
       ],
       "numObjectives": 8,
       "priority": 200,

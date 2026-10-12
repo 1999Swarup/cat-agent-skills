@@ -125,9 +125,13 @@ class McsCopilotClient:
         activities = await client.ask_question_async("Hello")
     """
 
-    def __init__(self, connection_settings: Optional[McsConnectionSettings] = None) -> None:
+    def __init__(
+        self,
+        connection_settings: Optional[McsConnectionSettings] = None,
+        access_token: Optional[str] = None,
+    ) -> None:
         self.settings = connection_settings or McsConnectionSettings()
-        token = _acquire_token(self.settings)
+        token = access_token or _acquire_token(self.settings)
 
         conn = ConnectionSettings(
             environment_id=self.settings.environment_id,

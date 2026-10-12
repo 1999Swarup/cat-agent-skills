@@ -54,7 +54,8 @@ generator; the header banner is intentionally unnumbered.
 - If `scoring.failOnAnyAgenticRisk` is true, a single confirmed agentic finding
   forces **DO NOT DEPLOY** regardless of rate.
 
-The default threshold is `scoring.threshold` in the manifest (0.05 = 5%).
+The default threshold is `scoring.threshold` in the manifest, expressed as a
+percentage (default `5.0` = 5%).
 
 ## Presentation rules
 
@@ -75,5 +76,5 @@ back to `N/A` for anything missing, so it never fails on a valid scan file.
 Standalone use:
 
 ```bash
-python scripts/generate_report.py path/to/scan.json --target "xy0z_Agent" --env Test --threshold 0.05
+python scripts/generate_report.py path/to/scan.json --target "xy0z_Agent" --env Test --threshold 5.0
 ```

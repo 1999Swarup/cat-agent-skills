@@ -68,19 +68,20 @@ python scripts/run_redteam.py --scan pre-deployment-full
 python scripts/run_redteam.py --dry-run
 ```
 
-`--dry-run` is useful in CI or a coding-agent harness to confirm the pipeline,
-manifest, and report generation work before wiring up real Azure/Copilot Studio
+`--dry-run` is useful in a local Scout/coding-agent harness to confirm the
+pipeline, manifest, and report generation work before wiring up real Azure/Copilot Studio
 credentials. It never contacts Azure and clearly labels its output as simulated.
 
 > Copilot Studio itself cannot execute these Python scripts — it has no Python
-> runtime. Run them from a dev machine, CI pipeline, or an Azure Function/Logic
-> App that wraps `run_redteam.py`; the scan then targets your **published**
-> Copilot Studio agent over its endpoint.
+> runtime. Run them from Scout or a dev machine; the scan then targets your
+> **published** Copilot Studio agent over its endpoint.
 
-Outputs are written to `scripts/output/<scan-name>/`:
+Outputs are written outside the submission by default, under
+`~/.copilot-agent-red-teamer/output/<scan-name>/`, unless `REDTEAM_OUTPUT_DIR`,
+`REDTEAM_OUTPUT_PATH`, or a concrete manifest `outputPath` overrides it:
 
-- `<scan-name>.json` — raw Azure AI Evaluation scorecard (also uploaded to your
-  Foundry project; a link is printed).
+- `<scan-name>.json` — Azure AI Evaluation scorecard, redacted locally before
+  report generation.
 - `<scan-name>_RedTeam_Report.html` — the fixed, downloadable report.
 - `<scan-name>_RedTeam_Report.md` — Markdown copy.
 
@@ -92,7 +93,8 @@ Outputs are written to `scripts/output/<scan-name>/`:
   and threat-detection policies block many adversarial prompts. This is
   **expected** and is scored as a *defended* result, not a tooling failure.
 - A scan of a few risk categories with several strategies typically takes
-  **30–45 minutes**; time scales with categories × strategies × objectives.
+  **30–45 minutes**; time scales with categories × expanded strategies ×
+  objectives. Scans over `maxProbesBeforeConfirm` require `--yes`.
 
 ## Bring your own objectives
 
