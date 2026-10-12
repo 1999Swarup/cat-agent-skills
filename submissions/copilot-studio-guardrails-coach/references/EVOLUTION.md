@@ -8,7 +8,8 @@ files back to the skill so the next run starts current.
 
 ## When to run evolution
 
-- The user pastes or describes the **current Guardrails UI** for their agent.
+- The user pastes or describes the current **Copilot Studio maker controls** for
+  their agent.
 - A new run is starting and `assets/guardrails-catalog.json` `lastReviewed` is
   older than the user's review cadence (e.g. > 30 days).
 - The user mentions a new control, a renamed control, a changed default, or a
@@ -27,7 +28,7 @@ files back to the skill so the next run starts current.
    `catalogVersion` per semver, set `lastReviewed` to today) **and** a matching
    probe for any new control in the playbook. Show the diff clearly.
 4. **Record.** Append a changelog entry (below). Note any new **lessons**
-   (e.g. "Spotlighting moved to GA", "PII now covers Tool call").
+   (e.g. "PII now covers Tool call", "a new built-in evaluation category exists").
 5. **Hand off.** Tell the user to save the updated `guardrails-catalog.json`,
    `references/GUARDRAILS-CATALOG.md`, and `references/MANUAL-REDTEAM-PLAYBOOK.md`
    back into the skill's Knowledge so the change persists. In Copilot Studio the
@@ -43,14 +44,12 @@ files back to the skill so the next run starts current.
 
 Keep newest first. Each entry: version, date, and what changed.
 
-- **1.1.0 — 2026-08-15** — Expanded catalog to the full Foundry Control Plane
-  guardrail set: Jailbreak (Block, locked), Indirect prompt injections
-  (Annotate) + Spotlighting (Preview, On), Content harms Hate/Sexual/Self-harm/
-  Violence (Medium blocking, Block) + Blocklists, Protected materials for code
-  and text (Block), Sensitive data leakage PII (Preview, Block across input/tool
-  call/tool response/output), Task drift → Task adherence (Preview, Block on Tool
-  call), and Network egress rules (Deny, hosted agents only). Added matching
-  manual probes for every control.
+- **1.1.0 — 2026-08-15** — Expanded catalog to maker-actionable Copilot Studio
+  hardening checks: Jailbreak, Indirect prompt injections, Content harms
+  Hate/Sexual/Self-harm/Violence + Blocklists, Protected materials for code and
+  text, Sensitive data leakage PII, and Task drift / Task adherence. Excluded
+  Foundry-only/model-only controls from default agent scope. Added matching
+  manual probes for every in-scope control.
 - **1.0.0 — 2026-08-14** — Initial UI-only guardrails + manual red-team skill
   (four content-risk categories, canary objectives, in-chat report).
 
@@ -60,9 +59,7 @@ Short, durable notes the agent should honor going forward:
 
 - Indirect prompt injection **annotates** rather than blocks — downstream logic
   must act on the annotation; test that it does.
-- Network egress rules apply **only to hosted agents**; skip for prompt-based
-  agents/models and say so.
 - Content harms have a **blocking level** (Low/Medium/High); Medium is the
   default — always report the level tested.
-- Several controls are **Preview** (Spotlighting, PII, Task adherence, some
-  intervention points); flag Preview status in every report.
+- Several controls may be **Preview** (PII, Task adherence, some intervention
+  points); flag Preview status in every report.

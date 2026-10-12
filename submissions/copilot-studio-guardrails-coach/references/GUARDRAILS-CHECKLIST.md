@@ -6,13 +6,13 @@ change. Exact menu labels vary slightly by tenant and release; guide by intent.
 
 ## 1. Content moderation / generative AI settings
 
-- **Where:** Settings → **Generative AI** (or Generative orchestration), and the
-  **Guardrails** configuration.
-- **What:** Configure the guardrail **controls** (Jailbreak, Indirect prompt
-  injections + Spotlighting, Content harms with blocking levels, Blocklists,
-  Protected materials, PII, Task adherence, Egress rules). See
-  `references/GUARDRAILS-CATALOG.md` for the full control-by-control list,
-  intervention points, and actions.
+- **Where:** Copilot Studio authoring canvas settings for generative AI,
+  instructions, authentication, knowledge, topics/actions, and channels.
+- **What:** Configure maker-actionable checks (Jailbreak, Indirect prompt
+  injections, Content harms with blocking levels, Blocklists, Protected
+  materials, PII, Task adherence, authentication, action confirmation,
+  connector permissions, and DLP). See `references/GUARDRAILS-CATALOG.md` for
+  the full control-by-control list, intervention points, and actions.
 - **Why:** These controls are the first line of defense; they block or annotate
   many adversarial probes outright (which shows up as *Defended* in the test).
 

@@ -1,9 +1,9 @@
 {
   "catalogVersion": "1.1.0",
   "lastReviewed": "2026-08-15",
-  "source": "Microsoft Foundry Control Plane / Copilot Studio Guardrails configuration UI",
-  "note": "A guardrail is a collection of controls assigned to specific agents or models. Some controls are added by default and cannot be removed. This catalog is a LIVING document — see references/EVOLUTION.md; update catalogVersion + lastReviewed and append a changelog entry whenever the product UI changes.",
-  "interventionPoints": ["User input", "Output", "Tool call", "Tool response", "Outbound requests"],
+  "source": "Copilot Studio maker controls and evaluation follow-up workflow",
+  "note": "This catalog tracks product-UI hardening checks that a Copilot Studio maker can act on. It intentionally excludes Foundry-only/model-only guardrails and hosted-agent egress rules unless Copilot Studio exposes equivalent controls. See references/EVOLUTION.md; update catalogVersion + lastReviewed and append a changelog entry whenever the product UI changes.",
+  "interventionPoints": ["User input", "Output", "Tool call", "Tool response"],
   "actions": ["Block", "Annotate", "On", "Deny", "Allow"],
   "blockingLevels": ["Low blocking", "Medium blocking", "High blocking"],
   "groups": [
@@ -32,15 +32,6 @@
           "default": true,
           "removable": true,
           "preview": false,
-          "testWith": ["indirect-injection-xpia"]
-        },
-        {
-          "riskType": "Spotlighting",
-          "interventionPoint": ["User input"],
-          "action": "On",
-          "default": false,
-          "removable": true,
-          "preview": true,
           "testWith": ["indirect-injection-xpia"]
         }
       ]
@@ -89,22 +80,6 @@
           "removable": true,
           "preview": true,
           "testWith": ["task-drift"]
-        }
-      ]
-    },
-    {
-      "group": "Network",
-      "appliesTo": "Hosted agents only. Prompt-based agents and models are not affected.",
-      "controls": [
-        {
-          "riskType": "Egress rules",
-          "interventionPoint": ["Outbound requests"],
-          "action": "Deny",
-          "default": false,
-          "removable": true,
-          "preview": false,
-          "configHint": "Add allow rules; default posture denies outbound requests.",
-          "testWith": ["egress-exfiltration"]
         }
       ]
     }

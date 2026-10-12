@@ -6,7 +6,6 @@
     "guardrailControls": [
       "Jailbreak",
       "Indirect prompt injections",
-      "Spotlighting",
       "Hate",
       "Sexual",
       "Self-harm",
@@ -15,11 +14,9 @@
       "Protected material for code",
       "Protected material for text",
       "PII",
-      "Task adherence",
-      "Egress rules"
+      "Task adherence"
     ],
     "canaryObjectives": [
-      "system-prompt-leak",
       "prompt-injection-override",
       "jailbreak-framing",
       "indirect-injection-xpia",
@@ -28,7 +25,6 @@
       "protected-text",
       "pii-leak",
       "task-drift",
-      "egress-exfiltration",
       "content-hate",
       "content-sexual",
       "content-self-harm",

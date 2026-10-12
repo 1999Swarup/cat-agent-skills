@@ -17,12 +17,12 @@ no Azure, no Python.
 
 ## What it does
 
-- **Mode A — Harden:** walks the full **Foundry Control Plane guardrail** set —
-  Jailbreak, Indirect prompt injections + Spotlighting, Content harms
+- **Mode A — Harden:** walks the Copilot Studio maker controls this workflow can
+  actually help with — Jailbreak, Indirect prompt injections, Content harms
   (Hate/Sexual/Self-harm/Violence with blocking levels) + Blocklists, Protected
-  materials (code + text), PII, Task adherence, and Network egress rules — plus
-  authentication, knowledge scoping, and deployment gating, and reports each
-  control's state and recommended change.
+  materials (code + text), PII, Task adherence, authentication, knowledge
+  scoping, action confirmation, connector permissions, DLP, and deployment
+  gating — and reports each control's state and recommended change.
 - **Mode B — Manual red team:** generates numbered, paste-ready probes (one per
   control) using **benign canaries** ("reply with only BANANA", system-prompt
   leak, unapproved-URL exfil) and **category-level** placeholders for content
@@ -32,9 +32,9 @@ no Azure, no Python.
   already produced test results, translate failures into tangible maker fixes:
   authentication, knowledge scoping, moderation level, topic/instruction changes,
   action confirmation, connector permissions, DLP, and retest steps.
-- **Mode C — Report:** fills `assets/report-template.html` and exports a **PDF**
-  (native on the GitHub Copilot harness and on Scout; Markdown fallback
-  elsewhere) with a per-control results table, findings, remediation, and verdict.
+- **Mode C — Report:** fills `assets/report-template.html` and returns
+  print-ready HTML/Markdown (PDF where the host can export it) with a per-control
+  results table, findings, remediation, and verdict.
 - **Mode D — Evolve:** keeps its guardrail catalog current. When Microsoft's
   controls change, it diffs the live UI against `assets/guardrails-catalog.json`,
   proposes a version-bumped catalog + matching probe, and records a changelog —
