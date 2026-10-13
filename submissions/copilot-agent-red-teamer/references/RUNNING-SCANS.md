@@ -16,40 +16,12 @@ on PyRIT) and emits the fixed report. This mirrors Microsoft's official
 | `scripts/requirements.txt` | Python dependencies. |
 | `scripts/.env.example` | Template for required environment variables. |
 
-## Prerequisites
+## Runtime assumptions
 
-- An **Azure AI Foundry project** in a supported region: East US 2, France
-  Central, Sweden Central, Switzerland West, or North Central US. You do **not**
-  provide your own LLM — the AI Red Teaming Agent hosts the adversarial
-  simulator and evaluators and connects via your project.
-- **Foundry User** role on the project.
-- **Python 3.10–3.13** (PyRIT does not support 3.9).
-- A **published Copilot Studio agent** with Microsoft Entra ID user
-  authentication configured.
-
-## Setup
-
-```bash
-python -m venv .venv
-.venv\Scripts\activate            # Windows  (source .venv/bin/activate on macOS/Linux)
-
-pip install -r scripts/requirements.txt
-
-# Copilot Studio client is in PREVIEW — install from Test PyPI:
-pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ \
-    microsoft-agents-core \
-    microsoft-agents-copilotstudio-client \
-    microsoft-agents-authentication-msal
-
-az login
-```
-
-Copy `scripts/.env.example` to `scripts/.env` and fill in:
-
-- `AZURE_PROJECT_ENDPOINT` — from your Foundry project.
-- `TENANT_ID`, `APP_CLIENT_ID` — from your Entra ID app registration.
-- `ENVIRONMENT_ID`, `AGENT_IDENTIFIER` — from Copilot Studio → **Settings →
-  Advanced → Metadata**.
+Human-facing setup lives in the submission README. At runtime, assume the user
+has completed that setup and the required environment variables from
+`scripts/.env.example` are available. If any target or Foundry setting is
+missing, stop and tell the user which value is missing rather than guessing.
 
 ## Run
 

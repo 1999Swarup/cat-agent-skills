@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import math
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -69,7 +70,8 @@ def _asr_value(value: Optional[float]) -> Optional[float]:
     if value is None:
         return None
     try:
-        return float(value)
+        v = float(value)
+        return v if math.isfinite(v) else None
     except (TypeError, ValueError):
         return None
 
@@ -270,6 +272,8 @@ _REDACTIONS = [
     (re.compile(r"(?i)\b(?:bearer|token|api[_-]?key|password|passwd|secret|connectionstring)\b\s*[:=]\s*\S+"),
      "[redacted-secret]"),
     (re.compile(r"(?i)(?:Endpoint|AccountKey|SharedAccessKey|Pwd|Password)=[^;\s]+"), "[redacted-secret]"),
+    (re.compile(r"\b\d{3}-\d{2}-\d{4}\b"), "[redacted-ssn]"),
+    (re.compile(r"\+?\b(?:\d[ .()-]?){7,15}\d\b"), "[redacted-phone-or-number]"),
     (re.compile(r"\b(?:\d[ -]?){13,19}\b"), "[redacted-number]"),
 ]
 
@@ -327,7 +331,10 @@ def _extract_findings(records: List[Any], limit: int = 15) -> List[Dict[str, str
         strategy = _first(r, "attack_strategy", "strategy", "attack_technique") or "Unknown"
         complexity = _first(r, "attack_complexity", "complexity") or ""
         prompt = _redact(str(_first(r, "attack_prompt", "prompt", "query", "objective") or ""))
-        response = _redact(str(_first(r, "response", "target_response", "answer") or ""))
+        # Do not include target response evidence in shareable reports. Regex
+        # redaction cannot reliably identify every name, address, phone, SSN, or
+        # tenant-specific secret the target may leak.
+        response = "[omitted: target response evidence is excluded from the shareable report]"
         if success is None and not _first(r, "attack_success", "success", "is_successful"):
             # no explicit success flag; skip to avoid over-reporting
             continue

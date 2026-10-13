@@ -4,12 +4,6 @@ Thin async wrapper around the preview `microsoft-agents-copilotstudio-client`
 package so the red-team runner can talk to a published Copilot Studio agent with
 a simple `start_conversation_async()` / `ask_question_async()` interface.
 
-Preview install (from a terminal, virtual env activated):
-
-    pip install msal msal-extensions
-    pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ \
-        microsoft-agents-core microsoft-agents-copilotstudio-client microsoft-agents-authentication-msal
-
 Auth uses an interactive MSAL public-client flow (device/interactive) and caches
 the token on disk so repeated scan probes reuse it. Configure the four required
 values as environment variables (see .env.example) or pass an
@@ -33,7 +27,7 @@ from microsoft_agents.copilotstudio.client import (
     PowerPlatformCloud,
     AgentType,
 )
-from microsoft_agents.core.models import ActivityTypes  # noqa: F401  (re-exported for callers)
+from microsoft_agents.activity import ActivityTypes  # noqa: F401  (re-exported for callers)
 
 _TOKEN_CACHE_PATH = Path(os.path.expanduser("~")) / ".mcs_redteam_token_cache.bin"
 # Power Platform API scope used by the Copilot Studio Direct-to-Engine client.

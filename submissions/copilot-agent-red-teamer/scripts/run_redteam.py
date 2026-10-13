@@ -11,10 +11,9 @@ Modes:
   * --dry-run             no Azure: validate the manifest->plan mapping and emit
                           a report from SIMULATED results (pipeline smoke test)
 
-Prerequisites for a real scan (see references/RUNNING-SCANS.md):
-    pip install "azure-ai-evaluation[redteam]" azure-identity python-dotenv
-    # plus the preview Copilot Studio client (see copilot_studio_client.py)
-    az login
+Complete human-facing setup from the submission README before running a real
+scan. The script fails closed and reports the missing runtime value if required
+environment variables are absent.
 
 Usage:
     python run_redteam.py                        # real scan, manifest defaults
@@ -31,6 +30,7 @@ import inspect
 import json
 import os
 import random
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -167,6 +167,32 @@ def _resolve_output_path(manifest: Dict[str, Any], scan_name: str) -> Path:
     out_dir = root / scan_name
     out_dir.mkdir(parents=True, exist_ok=True)
     return out_dir / f"{scan_name}.json"
+
+
+def _materialize_scan_json(result: Any, sdk_output_dir: Path, scan_json: Path) -> None:
+    """Create the canonical scan JSON file from the SDK output directory/result."""
+    candidates = [sdk_output_dir / "final_results.json"]
+    candidates.extend(sorted(sdk_output_dir.rglob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True))
+    for candidate in candidates:
+        if candidate.exists() and candidate.is_file():
+            scan_json.write_text(candidate.read_text(encoding="utf-8-sig"), encoding="utf-8")
+            return
+
+    for method in ("to_dict", "model_dump", "dict"):
+        fn = getattr(result, method, None)
+        if callable(fn):
+            scan_json.write_text(json.dumps(fn(), indent=2, default=str), encoding="utf-8")
+            return
+    if isinstance(result, dict):
+        scan_json.write_text(json.dumps(result, indent=2, default=str), encoding="utf-8")
+        return
+    raise RuntimeError(f"RedTeam scan did not produce a JSON result under {sdk_output_dir}")
+
+
+def _remove_sdk_raw_artifacts(sdk_output_dir: Path) -> None:
+    """Delete SDK raw artifacts after the canonical redacted JSON is materialized."""
+    if sdk_output_dir.exists():
+        shutil.rmtree(sdk_output_dir)
 
 
 def _resolve_supported_language(language: str) -> Any:
@@ -429,18 +455,22 @@ async def run_scan(scan_id: Optional[str], assume_yes: bool = False) -> None:
 
     print(f"\nRunning red-team scan '{scan_name}' ...")
     scan_state: Dict[str, Any] = {"infra_errors": 0}
-    await red_team.scan(
+    sdk_output_dir = out_dir / "sdk-output"
+    sdk_output_dir.mkdir(parents=True, exist_ok=True)
+    result = await red_team.scan(
         target=make_target_callback(scan_state),
         scan_name=scan_name,
         application_scenario="Copilot Studio agent red-team",
         attack_strategies=build_attack_strategies(scope["attackStrategies"]),
-        output_path=str(scan_json),
+        output_path=str(sdk_output_dir),
     )
+    _materialize_scan_json(result, sdk_output_dir, scan_json)
 
     # Redact secrets/PII in the raw scan JSON on disk — the SDK writes full target
     # responses there, and report-time redaction alone would leave the raw
     # artifact unprotected.
     redact_scan_file(scan_json)
+    _remove_sdk_raw_artifacts(sdk_output_dir)
 
     if scan_state.get("infra_errors"):
         print(
