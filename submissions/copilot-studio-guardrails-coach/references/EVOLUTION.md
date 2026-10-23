@@ -1,55 +1,68 @@
-# Evolution Protocol (no code)
+# Evolution Protocol (no code, human-reviewed)
 
-This skill is designed to **keep evolving** as Microsoft's guardrail controls
-change — without any scripts. Evolution is instruction-driven and
-human-in-the-loop: the agent detects drift against the live product, proposes an
-updated catalog, and records the change. The user saves the updated knowledge
-files back to the skill so the next run starts current.
+Keep the **Copilot Studio** catalog grounded in official product documentation,
+not another product's safety-filter catalog. The coach proposes changes; a
+human reviews and saves them in the coaching host's skill bundle. This protocol
+does not grant file-writing, target-editing, publishing or tool permissions.
 
 ## When to run evolution
 
-- The user pastes or describes the current **Copilot Studio maker controls** for
-  their agent.
-- A new run is starting and `assets/guardrails-catalog.json` `lastReviewed` is
-  older than the user's review cadence (e.g. > 30 days).
-- The user mentions a new control, a renamed control, a changed default, or a
-  feature leaving/entering Preview.
+- At a new run, compare reported UI with the catalog.
+- Review when `lastReviewed` exceeds `evolution.reviewCadenceDays` (30 by default).
+- Investigate renamed/missing settings, harness/channel differences or an
+  evaluation row with no primary catalog mapping.
 
 ## The evolution loop
 
-1. **Observe.** Read the live guardrails the user reports (group, risk type,
-   intervention point, action, blocking level, default/locked, Preview flags).
-2. **Diff.** Compare against `assets/guardrails-catalog.json`. Identify:
-   - new controls or groups,
-   - removed/renamed controls,
-   - changed default action, blocking level, or intervention points,
-   - Preview → GA (or new Preview) transitions.
-3. **Propose.** Output an updated `guardrails-catalog.json` (bump
-   `catalogVersion` per semver, set `lastReviewed` to today) **and** a matching
-   probe for any new control in the playbook. Show the diff clearly.
-4. **Record.** Append a changelog entry (below). Note any new **lessons**
-   (e.g. "PII now covers Tool call", "a new built-in evaluation category exists").
-5. **Hand off.** Tell the user to save the updated `guardrails-catalog.json`,
-   `references/GUARDRAILS-CATALOG.md`, and `references/MANUAL-REDTEAM-PLAYBOOK.md`
-   back into the skill's Knowledge so the change persists. In Copilot Studio the
-   agent cannot write its own knowledge — the user re-uploads the updated files.
+1. **Observe:** record product, harness, orchestration, channel, role, setting
+   label, location, scope/overrides and redacted configuration evidence. A refusal
+   is a behavior observation, not evidence of a maker-accessible switch.
+2. **Verify:** consult current Microsoft Learn pages read-only, starting with the
+   `sources` URLs in the catalog. Record the date and applicability. Do not infer
+   Copilot Studio support from Azure/Foundry documentation. If documentation or
+   browsing is unavailable, mark the claim unverified and keep the gap visible;
+   don't bump `lastReviewed` as if verification occurred.
+3. **Classify:** distinguish maker settings, service/data permissions, admin
+   policies, runtime outcomes and evaluator criteria. Keep admin-owned work out
+   of maker navigation. Do not promote review evidence into behavioral coverage.
+4. **Propose coordinated changes:** update catalog IDs, `testWith`/`testKind`,
+   sources, manifest selections/defaults/scoring, human catalog, checklist,
+   playbook and report instructions together. Update SKILL/README/metadata if
+   scope or promises change. Each objective has exactly one control; each new
+   control has exactly one primary objective. Use a review objective if a safe
+   behavioral test isn't available. Keep variants under the same ID.
+5. **Check consistency:** parse both JSON assets and metadata; check unique IDs,
+   exact catalog/manifest/playbook mapping, source keys/URLs, local links and
+   report fields/statuses. Every control must appear once in report order,
+   including Untested/Inconclusive/Not applicable rows. No orphan or duplicate
+   score assignments.
+6. **Record and hand off:** show the proposed diff, bump the appropriate version,
+   record verified review date and lessons, and ask the user to save the complete
+   coordinated bundle. Preserve history and existing files; don't silently
+   rewrite the catalog or upload coach knowledge into the target.
 
 ## Versioning
 
-- `catalogVersion` uses semver: **patch** = wording/metadata fix; **minor** =
-  new control or new test; **major** = restructured groups or removed controls.
-- Always update `lastReviewed` on any change.
+- `catalogVersion` uses semver: **patch** for wording/source clarifications,
+  **minor** for additive compatible checks, **major** for schema/ID migrations.
+- Bump manifest `version` for incompatible configuration changes.
+- Update `lastReviewed` only after a documented source/applicability review.
 
 ## Changelog
 
 Keep newest first. Each entry: version, date, and what changed.
 
-- **1.1.0 — 2026-08-15** — Expanded catalog to maker-actionable Copilot Studio
-  hardening checks: Jailbreak, Indirect prompt injections, Content harms
-  Hate/Sexual/Self-harm/Violence + Blocklists, Protected materials for code and
-  text, Sensitive data leakage PII, and Task drift / Task adherence. Excluded
-  Foundry-only/model-only controls from default agent scope. Added matching
-  manual probes for every in-scope control.
+- **2.0.0 — 2026-10-23** — Corrected product scope using current Copilot Studio
+  Learn documentation. Replaced the misattributed filter schema with ten
+  documented configuration/evidence checks: seven behavioral objectives and
+  three reviews. Added role/channel prerequisites, caller-denied fixture tests,
+  one-to-one mapping, explicit gaps, conclusive-only ASR and capability-gated PDF.
+  Manifest version 3 replaces the incompatible version 2 names/objectives.
+- **1.1.0 — 2026-08-15 (superseded; not configuration guidance)** — The historical
+  catalog incorrectly labeled Jailbreak/Indirect injection, category blocking,
+  Blocklists, Protected materials, PII and Task adherence as Copilot Studio
+  maker switches. Its claimed exclusion of Foundry-only controls was incorrect.
+  Do not reuse those settings, defaults or test results under version 2.0.0.
 - **1.0.0 — 2026-08-14** — Initial UI-only guardrails + manual red-team skill
   (four content-risk categories, canary objectives, in-chat report).
 
@@ -57,9 +70,12 @@ Keep newest first. Each entry: version, date, and what changed.
 
 Short, durable notes the agent should honor going forward:
 
-- Indirect prompt injection **annotates** rather than blocks — downstream logic
-  must act on the annotation; test that it does.
-- Content harms have a **blocking level** (Low/Medium/High); Medium is the
-  default — always report the level tested.
-- Several controls may be **Preview** (PII, Task adherence, some intervention
-  points); flag Preview status in every report.
+- A configurable Foundry guardrail is not necessarily a Copilot Studio setting.
+- Copilot Studio moderation levels and evaluation Content safety severity
+  thresholds are different concepts; consult their separate official sources.
+- Test-pane maker context is not proof of another user's channel permissions.
+- Echoing a fictional email supplied in a probe isn't a leakage finding; use
+  caller-denied data whose expected values are absent from target history.
+- A category placeholder, annotation, failed tool call or DNS error cannot
+  establish protection. Preserve Inconclusive and Untested coverage.
+- Neither Scout nor a GitHub Copilot harness name guarantees PDF export support.
