@@ -30,7 +30,7 @@ import inspect
 import json
 import os
 import random
-import shutil
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -43,7 +43,7 @@ try:  # pragma: no cover
 except Exception:  # noqa: BLE001
     pass
 
-from generate_report import build_report, redact_scan_file  # pure stdlib, always importable
+from generate_report import build_report, sanitized_scan  # pure stdlib, always importable
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 MANIFEST_PATH = SKILL_ROOT / "assets" / "redteam-manifest.json"
@@ -169,30 +169,25 @@ def _resolve_output_path(manifest: Dict[str, Any], scan_name: str) -> Path:
     return out_dir / f"{scan_name}.json"
 
 
-def _materialize_scan_json(result: Any, sdk_output_dir: Path, scan_json: Path) -> None:
-    """Create the canonical scan JSON file from the SDK output directory/result."""
-    candidates = [sdk_output_dir / "final_results.json"]
-    candidates.extend(sorted(sdk_output_dir.rglob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True))
-    for candidate in candidates:
-        if candidate.exists() and candidate.is_file():
-            scan_json.write_text(candidate.read_text(encoding="utf-8-sig"), encoding="utf-8")
-            return
-
-    for method in ("to_dict", "model_dump", "dict"):
-        fn = getattr(result, method, None)
-        if callable(fn):
-            scan_json.write_text(json.dumps(fn(), indent=2, default=str), encoding="utf-8")
-            return
+def _materialize_scan_json(
+    result: Any, sdk_output_dir: Path, scan_json: Path, scope: Optional[Dict[str, Any]] = None
+) -> None:
+    """Export sanitized scores/references, never an arbitrary intermediate file."""
     if isinstance(result, dict):
-        scan_json.write_text(json.dumps(result, indent=2, default=str), encoding="utf-8")
-        return
-    raise RuntimeError(f"RedTeam scan did not produce a JSON result under {sdk_output_dir}")
-
-
-def _remove_sdk_raw_artifacts(sdk_output_dir: Path) -> None:
-    """Delete SDK raw artifacts after the canonical redacted JSON is materialized."""
-    if sdk_output_dir.exists():
-        shutil.rmtree(sdk_output_dir)
+        scan = result
+    elif callable(getattr(result, "to_json", None)):
+        payload = result.to_json()
+        if not payload:
+            raise ValueError("RedTeam returned an empty result.")
+        scan = json.loads(payload)
+    else:
+        final_results = list(sdk_output_dir.rglob("final_results.json"))
+        if len(final_results) != 1:
+            raise ValueError("Expected exactly one final_results.json from the RedTeam SDK.")
+        scan = json.loads(final_results[0].read_text(encoding="utf-8-sig"))
+    if not isinstance(scan, dict) or not any(key in scan for key in ("scorecard", "redteaming_scorecard")):
+        raise ValueError("RedTeam result does not contain a scorecard.")
+    scan_json.write_text(json.dumps(sanitized_scan(scan, scope), indent=2, allow_nan=False), encoding="utf-8")
 
 
 def _resolve_supported_language(language: str) -> Any:
@@ -438,8 +433,9 @@ async def run_scan(scan_id: Optional[str], assume_yes: bool = False) -> None:
     custom_prompts = custom_prompts if custom_prompts and "{{" not in custom_prompts else None
 
     kwargs: Dict[str, Any] = {"azure_ai_project": azure_ai_project, "credential": AzureCliCredential()}
-    if _call_accepts(RedTeam, "language"):
-        kwargs["language"] = _resolve_supported_language(scope.get("language", "English"))
+    if not _call_accepts(RedTeam, "language"):
+        raise SystemExit("This SDK cannot accept the configured language. Use a supported RedTeam SDK.")
+    kwargs["language"] = _resolve_supported_language(scope.get("language", "English"))
     if custom_prompts:
         kwargs["custom_attack_seed_prompts"] = custom_prompts
     else:
@@ -455,22 +451,18 @@ async def run_scan(scan_id: Optional[str], assume_yes: bool = False) -> None:
 
     print(f"\nRunning red-team scan '{scan_name}' ...")
     scan_state: Dict[str, Any] = {"infra_errors": 0}
-    sdk_output_dir = out_dir / "sdk-output"
-    sdk_output_dir.mkdir(parents=True, exist_ok=True)
-    result = await red_team.scan(
-        target=make_target_callback(scan_state),
-        scan_name=scan_name,
-        application_scenario="Copilot Studio agent red-team",
-        attack_strategies=build_attack_strategies(scope["attackStrategies"]),
-        output_path=str(sdk_output_dir),
-    )
-    _materialize_scan_json(result, sdk_output_dir, scan_json)
-
-    # Redact secrets/PII in the raw scan JSON on disk — the SDK writes full target
-    # responses there, and report-time redaction alone would leave the raw
-    # artifact unprotected.
-    redact_scan_file(scan_json)
-    _remove_sdk_raw_artifacts(sdk_output_dir)
+    # Isolate only newly generated SDK files; never reuse or remove a user's
+    # existing sdk-output directory. Cleanup also runs when scanning/export fails.
+    with tempfile.TemporaryDirectory(prefix="copilot-redteam-") as temporary_output:
+        sdk_output_dir = Path(temporary_output)
+        result = await red_team.scan(
+            target=make_target_callback(scan_state),
+            scan_name=scan_name,
+            application_scenario="Copilot Studio agent red-team",
+            attack_strategies=build_attack_strategies(scope["attackStrategies"]),
+            output_path=str(sdk_output_dir),
+        )
+        _materialize_scan_json(result, sdk_output_dir, scan_json, scope)
 
     if scan_state.get("infra_errors"):
         print(
@@ -562,7 +554,7 @@ def dry_run(scan_id: Optional[str]) -> None:
     scan_name = f"{scan_id or 'default'}-DRYRUN-{ts}"
     scan_json = _resolve_output_path(manifest, scan_name)
     out_dir = scan_json.parent
-    scan_json.write_text(json.dumps(simulate_scan(scope), indent=2), encoding="utf-8")
+    scan_json.write_text(json.dumps(sanitized_scan(simulate_scan(scope)), indent=2, allow_nan=False), encoding="utf-8")
     print(f"\nSimulated scan JSON written: {scan_json}")
     _finish(scan_json, out_dir, scan_name, manifest, scope=scope, simulated=True)
 
@@ -578,6 +570,7 @@ def _finish(scan_json: Path, out_dir: Path, scan_name: str, manifest: Dict[str, 
         "failOnAnyAgenticRisk": manifest.get("scoring", {}).get("failOnAnyAgenticRisk", True),
         "scan_name": scan_name,
         "incomplete": incomplete,
+        "simulated": simulated,
         "riskCategories": scope.get("riskCategories", []),
         "attackStrategies": scope.get("attackStrategies", []),
         "numObjectives": scope.get("numObjectives", "N/A"),

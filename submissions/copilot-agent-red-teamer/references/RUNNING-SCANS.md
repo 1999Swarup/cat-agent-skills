@@ -52,10 +52,16 @@ Outputs are written outside the submission by default, under
 `~/.copilot-agent-red-teamer/output/<scan-name>/`, unless `REDTEAM_OUTPUT_DIR`,
 `REDTEAM_OUTPUT_PATH`, or a concrete manifest `outputPath` overrides it:
 
-- `<scan-name>.json` — Azure AI Evaluation scorecard, redacted locally before
-  report generation.
+- `<scan-name>.json` — numeric scorecard, scan parameters and attack-record
+  references; raw conversations, assessment text and seed content are omitted.
 - `<scan-name>_RedTeam_Report.html` — the fixed, downloadable report.
 - `<scan-name>_RedTeam_Report.md` — Markdown copy.
+
+The SDK writes into a new isolated temporary directory, not a reused output
+folder. Only files created for that run are cleaned up on success or failure;
+pre-existing evidence folders are not removed. The canonical JSON is sanitized
+in memory before writing. Remote Foundry evidence remains subject to the
+project's own access/retention policy; only use an approved trusted project.
 
 ## Expected behavior
 

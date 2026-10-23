@@ -21,9 +21,11 @@ framework): **scan → evaluate → report**.
 
 ## What it covers
 
-**Content risks** — Hateful & Unfair, Sexual, Violent, Self-Harm, Protected
-Material, Code Vulnerability, Ungrounded Attributes.
-**Agentic risks** — Prohibited Actions, Sensitive Data Leakage, Task Adherence.
+**Local scan scope** — Hateful & Unfair, Sexual, Violent and Self-Harm, plus
+Protected Material, Code Vulnerability or Ungrounded Attributes only when the
+installed SDK supports them. Unsupported requested categories fail explicitly.
+The bundled runner does not implement a cloud agentic scanner; the reference
+rubric/report gate can interpret existing agentic findings from approved inputs.
 
 ## Before you start
 
@@ -38,6 +40,22 @@ scan. To run a **real** scan against a live Copilot Studio agent, use the bundle
 - **Python 3.10–3.13** and `pip install -r scripts/requirements.txt`, plus the
   preview `microsoft-agents-copilotstudio-client`.
 - A **published Copilot Studio agent** with Entra ID authentication.
+- **Foundry User** on an approved project. Copilot Studio authentication uses
+  interactive MSAL, so real scans require a signed-in local operator, not an
+  unattended CI/Function host.
+
+Create a Python virtual environment, install `scripts/requirements.txt` and the
+Copilot Studio client matching `microsoft_agents.copilotstudio.client` and
+`microsoft_agents.activity`. The published `microsoft-agents-copilotstudio-client`
+package declares its hosting/activity dependencies. Use your organization's
+approved package versions; the older Test PyPI instructions in early previews
+are not a requirement to install into Copilot Studio.
+
+Sign in to Azure with `az login`. Copy `scripts/.env.example` to `scripts/.env`
+and supply `AZURE_PROJECT_ENDPOINT`, `TENANT_ID`, `APP_CLIENT_ID`,
+`ENVIRONMENT_ID` and `AGENT_IDENTIFIER` for the approved target. Do not commit
+credentials or generated scan data. Obtain explicit testing authorization and
+use isolated test data/tools before running any scan.
 
 ```bash
 python scripts/run_redteam.py --connectivity-check   # verify the endpoint
@@ -62,9 +80,18 @@ injection). The manifest is optional — with none, the skill runs a safe defaul
 
 Every scan produces the **same seven-section report** so results are comparable
 across runs and professional enough to share: Verdict, Executive Summary, Scan
-Parameters, ASR Breakdown, Findings (evidence truncated and redacted),
+Parameters, ASR Breakdown, Findings (source references, not raw conversations),
 Remediation & Next Steps, and Methodology & Disclaimer. The HTML is
 self-contained and print-to-PDF ready. See `references/REPORT-FORMAT.md`.
+
+Default HTML, Markdown and JSON exports omit raw probes, target responses and
+assessment text. Findings show the input record index, turn counts and a
+SHA-256 conversation reference; these locate evidence but do not prove it.
+Verify evaluator findings in the approved evidence store before release
+sign-off. The standalone generator can include excerpts from an input you have
+reviewed and sanitized with `--include-reviewed-evidence`. Regex masking is
+best-effort, not comprehensive PII detection. Simulated runs are visibly marked
+and always yield `REVIEW REQUIRED`.
 
 Remediation starts with controls a Copilot Studio maker can change directly:
 authentication, scoped knowledge sources, topic/agent instructions, action
@@ -81,7 +108,8 @@ runtime.
 - **Authorization first.** Only red team an agent you own or are cleared to test.
   Adversarial payloads go **only** to the declared target, and responses are
   always treated as data to score — never as instructions.
-- **Multi-agent ready.** Wire it into a Copilot Studio multi-agent system as a
-  connected "Safety / Red-Team" specialist that gates promotion of other agents.
+- **Host boundary.** Scout/local Python runs the scanner; Copilot Studio is the
+  target, not a runtime for these scripts. This package does not deploy a
+  connected specialist or enforce automatic agent promotion.
 - Red teaming measures **safety posture**, not correctness or quality, and does
   not replace human responsible-AI review.

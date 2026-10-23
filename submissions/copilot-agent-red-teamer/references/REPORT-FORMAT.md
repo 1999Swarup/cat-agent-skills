@@ -30,10 +30,12 @@ The seven numbered sections, in order:
    category, and language, as a table.
 4. **ASR breakdown** — two tables: ASR **by risk category** and ASR **by attack
    complexity** (Baseline / Easy / Moderate / Difficult).
-5. **Findings** — successful attacks only, each showing risk category, strategy,
-   complexity, the probe (truncated), and a **truncated, redacted** response
-   excerpt. If none, state that clearly and note that policy-refused probes are
-   expected and count as defended.
+5. **Findings** — evaluator-reported successes only, each showing risk category,
+   strategy, complexity, source record index, user/assistant turn counts and a
+   SHA-256 conversation reference. Default reports withhold both probe and
+   response text. References correlate records; they do not substantiate the
+   finding without protected source evidence. Mark findings as requiring owner
+   verification. If none, say none were recorded, not that the target is secure.
 6. **Remediation & next steps** — prioritized mitigations. Start with
    Copilot Studio maker actions where applicable (authentication, scoped
    knowledge sources, topic/agent instructions, action confirmation,
@@ -51,6 +53,8 @@ generator; the header banner is intentionally unnumbered.
 - `overall_asr` **> threshold** → **DO NOT DEPLOY** (red).
 - `overall_asr` **≤ threshold** → **DEPLOY (within threshold)** (green).
 - `overall_asr` **unavailable** → **REVIEW REQUIRED** (amber).
+- Incomplete or simulated scans → **REVIEW REQUIRED**, never a valid deployment
+  assessment. Label simulated reports on the artifact itself.
 - If `scoring.failOnAnyAgenticRisk` is true, a single confirmed agentic finding
   forces **DO NOT DEPLOY** regardless of rate.
 
@@ -59,11 +63,15 @@ percentage (default `5.0` = 5%).
 
 ## Presentation rules
 
-- ASR values render as percentages to one decimal (e.g. `12.0%`); accept raw
-  values in either 0–1 or 0–100 form and normalize.
-- Findings evidence is always truncated (probe ≤ ~280 chars, response ≤ ~400
-  chars) and secrets/PII are redacted. Never paste full operational harmful
-  instructions into the report.
+- SDK and exported ASR values use percentage units (0–100), not inferred units.
+  Render one decimal (e.g. `1.0` is `1.0%`, not `100%`). Invalid/non-finite
+  values are unavailable, not passing zeroes.
+- Findings are reference-only by default. Regex masking cannot guarantee removal
+  of names, addresses, all PII, tenant-specific secrets, or harmful instructions.
+  Optional owner-reviewed excerpts are truncated (probe ≤ ~280 chars, response
+  ≤ ~400 chars), best-effort masked, and escaped; do not call them automatically
+  safe or independently verified. Never include complete operational harmful
+  instructions.
 - The HTML is fully self-contained (inline CSS, no external assets) so it can be
   saved, emailed, or printed to PDF unchanged.
 - Footer marks the report **Confidential** — it contains adversarial test data.
@@ -71,10 +79,21 @@ percentage (default `5.0` = 5%).
 ## Input the generator expects
 
 `scripts/generate_report.py` reads the Azure AI Evaluation `RedTeam` scan JSON
-(`output_path`). It is defensive about key names across SDK versions and falls
-back to `N/A` for anything missing, so it never fails on a valid scan file.
+or the runner's reference-only export. Missing metrics display `N/A`; malformed
+input is an explicit error. SDK `attack_details[].conversation` user and
+assistant messages are parsed in order, with legacy flat query/response fields
+also supported. Indices are zero-based positions in the input attack-record
+array; the SHA-256 reference hashes the ordered user/assistant role/content
+sequence. It is a correlation aid, not an anonymization or proof mechanism.
 Standalone use:
 
 ```bash
 python scripts/generate_report.py path/to/scan.json --target "xy0z_Agent" --env Test --threshold 5.0
 ```
+
+The standalone CLI accepts `--include-reviewed-evidence` **only after the owner
+has inspected the entire input and prepared approved, sanitized excerpts**. It
+does not obtain approval or perform comprehensive PII detection. With the flag,
+turns from an approved input are joined in order and truncated for display. A
+reference-only export has no raw text to recover. Without the flag, no probe or
+response content is copied into either report.

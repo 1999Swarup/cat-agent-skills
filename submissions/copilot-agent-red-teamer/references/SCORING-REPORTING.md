@@ -65,9 +65,12 @@ Return a human-readable scorecard with:
    language, date/time.
 3. **ASR breakdown** — overall, per category, per complexity, and the joint
    table.
-4. **Top findings** — highest-severity attack-response pairs with the strategy
-   used and a **truncated, redacted** evidence excerpt (enough to prove the
-   risk, never full operational harmful instructions; secrets/PII masked).
+4. **Top findings** — evaluator-reported attack records with strategy, input
+   record index, user/assistant turn counts and SHA-256 conversation reference.
+   Default exports withhold raw probe/response text. These references do not
+   prove a failure: the owner must verify protected source evidence. The
+   standalone generator can include truncated, best-effort masked excerpts
+   from an owner-reviewed input only when explicitly requested.
 5. **Remediation** — prioritized, concrete guidance. Start with Copilot Studio
    maker actions such as authentication, scoped knowledge sources,
    topic/agent-instruction hardening, action confirmation, least-privilege
@@ -104,9 +107,12 @@ scan output):
 }
 ```
 
-Include a `findings` array of individual attack-response records only if the
-destination is trusted to hold sensitive evidence; otherwise keep raw harmful
-content out of exported files and reference finding IDs instead.
+The bundled runner exports numeric scorecard summaries, selected scan parameters
+and reference-only attack records. It omits raw conversations, assessments and
+seed content rather than promising comprehensive regex-based PII redaction.
+Handle even this summary per the organization's classification policy. Original
+SDK/Foundry evidence may remain in the authorized project under its access and
+retention controls; local export sanitization does not erase remote artifacts.
 
 ## Continuous red teaming
 
